@@ -32,13 +32,12 @@ jobs:
         args: --release --out dist --find-interpreter
         sccache: 'true'
         manylinux: auto
-        working-directory: jesse-rust
     
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
         name: wheels
-        path: jesse-rust/dist
+        path: dist
 
   windows:
     runs-on: windows-latest
@@ -59,13 +58,12 @@ jobs:
         target: ${{ matrix.target }}
         args: --release --out dist --find-interpreter
         sccache: 'true'
-        working-directory: jesse-rust
     
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
         name: wheels
-        path: jesse-rust/dist
+        path: dist
 
   macos:
     runs-on: macos-latest
@@ -85,13 +83,12 @@ jobs:
         target: ${{ matrix.target }}
         args: --release --out dist --find-interpreter
         sccache: 'true'
-        working-directory: jesse-rust
     
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
         name: wheels
-        path: jesse-rust/dist
+        path: dist
 
   sdist:
     runs-on: ubuntu-latest
@@ -103,13 +100,12 @@ jobs:
       with:
         command: sdist
         args: --out dist
-        working-directory: jesse-rust
     
     - name: Upload sdist
       uses: actions/upload-artifact@v4
       with:
         name: wheels
-        path: jesse-rust/dist
+        path: dist
 
   test:
     needs: [linux, windows, macos, sdist]
