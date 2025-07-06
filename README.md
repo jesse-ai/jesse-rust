@@ -88,7 +88,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Support
 
 - Documentation: [docs.jesse.trade](https://docs.jesse.trade)
-- Community: [Jesse Discord](https://discord.gg/jesse)
+- Community: [Jesse Discord](https://jesse.trade/discord)
 - Issues: [GitHub Issues](https://github.com/jesse-ai/jesse-rust/issues)
 
 ## Acknowledgments
