@@ -1601,7 +1601,7 @@ pub fn wma(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1
         // Initialize result array
         let mut result = Array1::<f64>::from_elem(n, f64::NAN);
         
-        if n < period {
+        if n < period || period == 0 {
             return Ok(PyArray1::from_array(py, &result).to_owned());
         }
         
@@ -1613,11 +1613,14 @@ pub fn wma(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1
         for i in (period - 1)..n {
             let mut weighted_sum = 0.0;
             
-            // Calculate weighted sum using unrolled loop for better performance
+            // Calculate weighted sum with safe indexing
             for j in 0..period {
                 let weight = (j + 1) as f64;
-                let value = source_array[i - period + 1 + j];
-                weighted_sum += weight * value;
+                let idx = i.saturating_sub(period - 1) + j;
+                if idx < n {
+                    let value = source_array[idx];
+                    weighted_sum += weight * value;
+                }
             }
             
             result[i] = weighted_sum / weight_sum_f64;
