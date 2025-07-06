@@ -56,8 +56,8 @@ If you need to build from source:
 
 ```bash
 # Clone the repository
-git clone https://github.com/jesse-ai/jesse.git
-cd jesse/jesse-rust
+git clone https://github.com/jesse-ai/jesse-rust.git
+cd jesse-rust
 
 # Install maturin
 pip install maturin
@@ -93,7 +93,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - Documentation: [docs.jesse.trade](https://docs.jesse.trade)
 - Community: [Jesse Discord](https://discord.gg/jesse)
-- Issues: [GitHub Issues](https://github.com/jesse-ai/jesse/issues)
+- Issues: [GitHub Issues](https://github.com/jesse-ai/jesse-rust/issues)
 
 ## Acknowledgments
 

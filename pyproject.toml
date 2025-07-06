@@ -41,8 +41,8 @@ dependencies = [
 [project.urls]
 "Homepage" = "https://jesse.trade"
 "Documentation" = "https://docs.jesse.trade"
-"Repository" = "https://github.com/jesse-ai/jesse"
-"Bug Reports" = "https://github.com/jesse-ai/jesse/issues"
+"Repository" = "https://github.com/jesse-ai/jesse-rust"
+"Bug Reports" = "https://github.com/jesse-ai/jesse-rust/issues"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
