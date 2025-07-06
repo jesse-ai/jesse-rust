@@ -1,0 +1,31 @@
+[package]
+name = "jesse_rust"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "rust"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.20.0", features = ["extension-module"] }
+numpy = "0.20.0"
+ndarray = "0.15.6"
+
+# Optimize for size and performance in release builds
+[profile.release]
+opt-level = 3          # Maximum optimization
+lto = true            # Link-time optimization
+codegen-units = 1     # Better optimization but slower compile
+panic = "abort"       # Smaller binaries
+strip = "symbols"     # Remove debug symbols
+
+# Size-focused optimization profile
+[profile.release-small]
+inherits = "release"
+opt-level = "z"       # Optimize for size
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
