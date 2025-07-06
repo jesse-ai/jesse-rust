@@ -10,10 +10,10 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Saleh Mir", email = "saleh@jesse.trade"},
+    {name = "Jesse Team", email = "info@jesse.trade"},
 ]
 maintainers = [
-    {name = "Saleh Mir", email = "saleh@jesse.trade"},
+    {name = "Jesse Team", email = "info@jesse.trade"},
 ]
 keywords = ["trading", "technical-analysis", "indicators", "rust", "performance"]
 classifiers = [
@@ -23,11 +23,10 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Rust",
     "Topic :: Office/Business :: Financial :: Investment",

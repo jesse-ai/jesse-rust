@@ -35,7 +35,7 @@ jobs:
         working-directory: jesse-rust
     
     - name: Upload wheels
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wheels
         path: jesse-rust/dist
@@ -62,7 +62,7 @@ jobs:
         working-directory: jesse-rust
     
     - name: Upload wheels
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wheels
         path: jesse-rust/dist
@@ -88,7 +88,7 @@ jobs:
         working-directory: jesse-rust
     
     - name: Upload wheels
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wheels
         path: jesse-rust/dist
@@ -106,7 +106,7 @@ jobs:
         working-directory: jesse-rust
     
     - name: Upload sdist
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wheels
         path: jesse-rust/dist
@@ -133,7 +133,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
     
     - name: Download wheels
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: wheels
         path: dist
@@ -169,7 +169,7 @@ jobs:
     
     steps:
     - name: Download wheels
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: wheels
         path: dist
