@@ -9,8 +9,8 @@ name = "jesse_rust"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.25.1", features = ["extension-module"] }
-numpy = "0.25.0"
+pyo3 = { version = "0.20.3", features = ["extension-module"] }
+numpy = "0.20.0"
 ndarray = "0.15.6"
 
 # Optimize for size and performance in release builds

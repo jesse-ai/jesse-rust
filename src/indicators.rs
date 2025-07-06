@@ -12,7 +12,7 @@ pub fn rsi(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1
         let mut result = Array1::<f64>::from_elem(n, f64::NAN);
 
         if n <= period {
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
 
         // Calculate initial sum of gains and losses
@@ -58,7 +58,7 @@ pub fn rsi(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1
             }
         }
 
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
@@ -76,7 +76,7 @@ pub fn kama(source: PyReadonlyArray1<f64>, period: usize, fast_length: usize, sl
             for i in 0..n {
                 result[i] = source_array[i];
             }
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
         
         // Calculate the efficiency ratio multiplier
@@ -124,7 +124,7 @@ pub fn kama(source: PyReadonlyArray1<f64>, period: usize, fast_length: usize, sl
             result[i] = result[i - 1] + sc * (source_array[i] - result[i - 1]);
         }
         
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
@@ -196,8 +196,8 @@ pub fn srsi(source: PyReadonlyArray1<f64>, period: usize, period_stoch: usize, k
         
         if n <= period {
             return Ok((
-                PyArray1::from_array(py, &k_values).unbind(),
-                PyArray1::from_array(py, &d_values).unbind()
+                PyArray1::from_array(py, &k_values).to_owned(),
+                PyArray1::from_array(py, &d_values).to_owned()
             ));
         }
 
@@ -307,8 +307,8 @@ pub fn srsi(source: PyReadonlyArray1<f64>, period: usize, period_stoch: usize, k
         }
         
         Ok((
-            PyArray1::from_array(py, &k_values).unbind(),
-            PyArray1::from_array(py, &d_values).unbind()
+            PyArray1::from_array(py, &k_values).to_owned(),
+            PyArray1::from_array(py, &d_values).to_owned()
         ))
     })
 }
@@ -323,7 +323,7 @@ pub fn adx(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<PyArray
 
         let required_len = 2 * period;
         if n <= required_len {
-            return Ok(PyArray1::from_array(py, &adx_result).unbind());
+            return Ok(PyArray1::from_array(py, &adx_result).to_owned());
         }
 
         let high = candles_array.slice(s![.., 3]);
@@ -402,7 +402,7 @@ pub fn adx(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<PyArray
             }
         }
 
-        Ok(PyArray1::from_array(py, &adx_result).unbind())
+        Ok(PyArray1::from_array(py, &adx_result).to_owned())
     })
 }
 
@@ -415,7 +415,7 @@ pub fn tema(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray
         let mut result = Array1::<f64>::zeros(n);
 
         if n == 0 {
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
 
         let alpha = 2.0 / (period as f64 + 1.0);
@@ -432,7 +432,7 @@ pub fn tema(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray
             result[i] = 3.0 * ema1 - 3.0 * ema2 + ema3;
         }
 
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
@@ -449,9 +449,9 @@ pub fn macd(source: PyReadonlyArray1<f64>, fast_period: usize, slow_period: usiz
 
         if n == 0 {
             return Ok((
-                PyArray1::from_array(py, &macd_line_result).unbind(),
-                PyArray1::from_array(py, &signal_line_result).unbind(),
-                PyArray1::from_array(py, &hist_result).unbind(),
+                PyArray1::from_array(py, &macd_line_result).to_owned(),
+                PyArray1::from_array(py, &signal_line_result).to_owned(),
+                PyArray1::from_array(py, &hist_result).to_owned(),
             ));
         }
 
@@ -488,9 +488,9 @@ pub fn macd(source: PyReadonlyArray1<f64>, fast_period: usize, slow_period: usiz
         }
 
         Ok((
-            PyArray1::from_array(py, &macd_line_result).unbind(),
-            PyArray1::from_array(py, &signal_line_result).unbind(),
-            PyArray1::from_array(py, &hist_result).unbind(),
+            PyArray1::from_array(py, &macd_line_result).to_owned(),
+            PyArray1::from_array(py, &signal_line_result).to_owned(),
+            PyArray1::from_array(py, &hist_result).to_owned(),
         ))
     })
 }
@@ -504,7 +504,7 @@ pub fn bollinger_bands_width(source: PyReadonlyArray1<f64>, period: usize, mult:
         let mut result = Array1::<f64>::from_elem(n, f64::NAN);
 
         if n < period {
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
 
         // Use rolling window for efficient calculation
@@ -552,7 +552,7 @@ pub fn bollinger_bands_width(source: PyReadonlyArray1<f64>, period: usize, mult:
             }
         }
 
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
@@ -569,9 +569,9 @@ pub fn bollinger_bands(source: PyReadonlyArray1<f64>, period: usize, devup: f64,
 
         if n < period {
             return Ok((
-                PyArray1::from_array(py, &upper_band).unbind(),
-                PyArray1::from_array(py, &middle_band).unbind(),
-                PyArray1::from_array(py, &lower_band).unbind()
+                PyArray1::from_array(py, &upper_band).to_owned(),
+                PyArray1::from_array(py, &middle_band).to_owned(),
+                PyArray1::from_array(py, &lower_band).to_owned()
             ));
         }
 
@@ -616,9 +616,9 @@ pub fn bollinger_bands(source: PyReadonlyArray1<f64>, period: usize, devup: f64,
         }
 
         Ok((
-            PyArray1::from_array(py, &upper_band).unbind(),
-            PyArray1::from_array(py, &middle_band).unbind(),
-            PyArray1::from_array(py, &lower_band).unbind()
+            PyArray1::from_array(py, &upper_band).to_owned(),
+            PyArray1::from_array(py, &middle_band).to_owned(),
+            PyArray1::from_array(py, &lower_band).to_owned()
         ))
     })
 }
@@ -654,7 +654,7 @@ pub fn shift(source: PyReadonlyArray1<f64>, periods: isize) -> PyResult<Py<PyArr
             }
         }
 
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
@@ -667,7 +667,7 @@ pub fn moving_std(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<P
         let mut result = Array1::<f64>::from_elem(n, f64::NAN);
 
         if n < period {
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
 
         // Calculate moving standard deviation
@@ -687,7 +687,7 @@ pub fn moving_std(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<P
             result[i] = variance.sqrt();
         }
 
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
@@ -700,7 +700,7 @@ pub fn sma(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1
         let mut result = Array1::<f64>::from_elem(n, f64::NAN);
 
         if n < period {
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
 
         // Calculate first SMA value
@@ -731,7 +731,7 @@ pub fn sma(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1
             }
         }
 
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
@@ -751,7 +751,7 @@ pub fn smma(source: PyReadonlyArray1<f64>, length: usize) -> PyResult<Py<PyArray
             for i in 0..n {
                 result[i] = f64::NAN;
             }
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
         
         // Calculate first SMMA value (SMA)
@@ -775,7 +775,7 @@ pub fn smma(source: PyReadonlyArray1<f64>, length: usize) -> PyResult<Py<PyArray
             result[i] = f64::NAN;
         }
         
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
@@ -793,9 +793,9 @@ pub fn alligator(source: PyReadonlyArray1<f64>) -> PyResult<(Py<PyArray1<f64>>, 
         
         if n < 13 {  // Need at least 13 periods for jaw (longest period)
             return Ok((
-                PyArray1::from_array(py, &jaw).unbind(),
-                PyArray1::from_array(py, &teeth).unbind(),
-                PyArray1::from_array(py, &lips).unbind()
+                PyArray1::from_array(py, &jaw).to_owned(),
+                PyArray1::from_array(py, &teeth).to_owned(),
+                PyArray1::from_array(py, &lips).to_owned()
             ));
         }
         
@@ -881,9 +881,9 @@ pub fn alligator(source: PyReadonlyArray1<f64>) -> PyResult<(Py<PyArray1<f64>>, 
         }
         
         Ok((
-            PyArray1::from_array(py, &jaw).unbind(),
-            PyArray1::from_array(py, &teeth).unbind(),
-            PyArray1::from_array(py, &lips).unbind()
+            PyArray1::from_array(py, &jaw).to_owned(),
+            PyArray1::from_array(py, &teeth).to_owned(),
+            PyArray1::from_array(py, &lips).to_owned()
         ))
     })
 } 
@@ -901,8 +901,8 @@ pub fn di(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<(Py<PyArray
         
         if n < 2 || n < period + 1 {
             return Ok((
-                PyArray1::from_array(py, &plus_di).unbind(),
-                PyArray1::from_array(py, &minus_di).unbind()
+                PyArray1::from_array(py, &plus_di).to_owned(),
+                PyArray1::from_array(py, &minus_di).to_owned()
             ));
         }
         
@@ -976,8 +976,8 @@ pub fn di(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<(Py<PyArray
         }
         
         Ok((
-            PyArray1::from_array(py, &plus_di).unbind(),
-            PyArray1::from_array(py, &minus_di).unbind()
+            PyArray1::from_array(py, &plus_di).to_owned(),
+            PyArray1::from_array(py, &minus_di).to_owned()
         ))
     })
 }
@@ -993,7 +993,7 @@ pub fn chop(candles: PyReadonlyArray2<f64>, period: usize, scalar: f64, drift: u
         let mut result = Array1::<f64>::from_elem(n, f64::NAN);
         
         if n < period {
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
         
         // Extract OHLCV data
@@ -1124,7 +1124,7 @@ pub fn chop(candles: PyReadonlyArray2<f64>, period: usize, scalar: f64, drift: u
             }
         }
         
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
@@ -1139,7 +1139,7 @@ pub fn atr(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<PyArray
         let mut result = Array1::<f64>::from_elem(n, f64::NAN);
         
         if n < period {
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
         
         // Extract OHLCV data
@@ -1182,7 +1182,7 @@ pub fn atr(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<PyArray
             result[i] = result[i - 1] + alpha * (tr - result[i - 1]);
         }
         
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
@@ -1202,7 +1202,7 @@ pub fn chande(
         let mut result = Array1::<f64>::from_elem(n, f64::NAN);
         
         if n < period {
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
         
         // Extract OHLCV data
@@ -1343,7 +1343,7 @@ pub fn chande(
             }
         }
         
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
@@ -1361,9 +1361,9 @@ pub fn donchian(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<Py
         
         if n < period {
             let result = PyDict::new(py);
-            result.set_item("upperband", PyArray1::from_array(py, &upperband).unbind())?;
-            result.set_item("middleband", PyArray1::from_array(py, &middleband).unbind())?;
-            result.set_item("lowerband", PyArray1::from_array(py, &lowerband).unbind())?;
+            result.set_item("upperband", PyArray1::from_array(py, &upperband).to_owned())?;
+            result.set_item("middleband", PyArray1::from_array(py, &middleband).to_owned())?;
+            result.set_item("lowerband", PyArray1::from_array(py, &lowerband).to_owned())?;
             return Ok(result.into());
         }
         
@@ -1464,9 +1464,9 @@ pub fn donchian(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<Py
         
         // Return as dictionary
         let result = PyDict::new(py);
-        result.set_item("upperband", PyArray1::from_array(py, &upperband).unbind())?;
-        result.set_item("middleband", PyArray1::from_array(py, &middleband).unbind())?;
-        result.set_item("lowerband", PyArray1::from_array(py, &lowerband).unbind())?;
+        result.set_item("upperband", PyArray1::from_array(py, &upperband).to_owned())?;
+        result.set_item("middleband", PyArray1::from_array(py, &middleband).to_owned())?;
+        result.set_item("lowerband", PyArray1::from_array(py, &lowerband).to_owned())?;
         Ok(result.into())
     })
 }
@@ -1482,7 +1482,7 @@ pub fn willr(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<PyArr
         let mut result = Array1::<f64>::from_elem(n, f64::NAN);
         
         if n < period {
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
         
         // Extract required data
@@ -1587,7 +1587,7 @@ pub fn willr(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<PyArr
             }
         }
         
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
@@ -1602,7 +1602,7 @@ pub fn wma(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1
         let mut result = Array1::<f64>::from_elem(n, f64::NAN);
         
         if n < period || period == 0 {
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
         
         // Pre-calculate weight sum for efficiency
@@ -1626,7 +1626,7 @@ pub fn wma(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1
             result[i] = weighted_sum / weight_sum_f64;
         }
         
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
@@ -1641,7 +1641,7 @@ pub fn vwma(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<PyArra
         let mut result = Array1::<f64>::from_elem(n, f64::NAN);
         
         if n == 0 {
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
         
         // Extract required data
@@ -1690,7 +1690,7 @@ pub fn vwma(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<PyArra
             }
         }
         
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
@@ -1705,8 +1705,8 @@ pub fn stoch(candles: PyReadonlyArray2<f64>, fastk_period: usize, slowk_period: 
             let k_values = Array1::<f64>::from_elem(n, f64::NAN);
             let d_values = Array1::<f64>::from_elem(n, f64::NAN);
             return Ok((
-                PyArray1::from_array(py, &k_values).unbind(),
-                PyArray1::from_array(py, &d_values).unbind()
+                PyArray1::from_array(py, &k_values).to_owned(),
+                PyArray1::from_array(py, &d_values).to_owned()
             ));
         }
         
@@ -1749,8 +1749,8 @@ pub fn stoch(candles: PyReadonlyArray2<f64>, fastk_period: usize, slowk_period: 
         let smoothed_d = sma_array(&smoothed_k, slowd_period);
         
         Ok((
-            PyArray1::from_array(py, &smoothed_k).unbind(),
-            PyArray1::from_array(py, &smoothed_d).unbind()
+            PyArray1::from_array(py, &smoothed_k).to_owned(),
+            PyArray1::from_array(py, &smoothed_d).to_owned()
         ))
     })
 }
@@ -1767,8 +1767,8 @@ pub fn stochf(candles: PyReadonlyArray2<f64>, fastk_period: usize, fastd_period:
         
         if n < fastk_period {
             return Ok((
-                PyArray1::from_array(py, &k_values).unbind(),
-                PyArray1::from_array(py, &d_values).unbind()
+                PyArray1::from_array(py, &k_values).to_owned(),
+                PyArray1::from_array(py, &d_values).to_owned()
             ));
         }
         
@@ -1882,8 +1882,8 @@ pub fn stochf(candles: PyReadonlyArray2<f64>, fastk_period: usize, fastd_period:
         d_values = smoothed_d;
         
         Ok((
-            PyArray1::from_array(py, &k_values).unbind(),
-            PyArray1::from_array(py, &d_values).unbind()
+            PyArray1::from_array(py, &k_values).to_owned(),
+            PyArray1::from_array(py, &d_values).to_owned()
         ))
     })
 }
@@ -1900,8 +1900,8 @@ pub fn dm(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<(Py<PyArray
         
         if n <= period {
             return Ok((
-                PyArray1::from_array(py, &plus_dm).unbind(),
-                PyArray1::from_array(py, &minus_dm).unbind()
+                PyArray1::from_array(py, &plus_dm).to_owned(),
+                PyArray1::from_array(py, &minus_dm).to_owned()
             ));
         }
         
@@ -1952,8 +1952,8 @@ pub fn dm(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<(Py<PyArray
         }
         
         Ok((
-            PyArray1::from_array(py, &plus_dm).unbind(),
-            PyArray1::from_array(py, &minus_dm).unbind()
+            PyArray1::from_array(py, &plus_dm).to_owned(),
+            PyArray1::from_array(py, &minus_dm).to_owned()
         ))
     })
 }
@@ -1968,12 +1968,12 @@ pub fn dema(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray
         let mut result = Array1::<f64>::from_elem(n, f64::NAN);
         
         if n == 0 {
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
         
         if n == 1 {
             result[0] = source_array[0];
-            return Ok(PyArray1::from_array(py, &result).unbind());
+            return Ok(PyArray1::from_array(py, &result).to_owned());
         }
         
         let alpha = 2.0 / (period as f64 + 1.0);
@@ -2005,7 +2005,7 @@ pub fn dema(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray
             result[i] = two * ema1[i] - ema2[i];
         }
         
-        Ok(PyArray1::from_array(py, &result).unbind())
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
 
