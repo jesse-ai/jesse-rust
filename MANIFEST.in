@@ -1,0 +1,9 @@
+include README.md
+include LICENSE
+include Cargo.toml
+include Cargo.lock
+include pyproject.toml
+recursive-include src *.rs
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude target/ 

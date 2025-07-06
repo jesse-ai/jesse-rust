@@ -3,13 +3,65 @@ requires = ["maturin>=1.8,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "jesse_rust"
-requires-python = ">=3.8"
-classifiers = [
-    "Programming Language :: Rust",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
+name = "jesse-rust"
+version = "0.1.0"
+description = "High-performance Rust-based technical indicators for Jesse trading framework"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Saleh Mir", email = "saleh@jesse.trade"},
 ]
-dynamic = ["version"]
+maintainers = [
+    {name = "Saleh Mir", email = "saleh@jesse.trade"},
+]
+keywords = ["trading", "technical-analysis", "indicators", "rust", "performance"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "numpy>=1.26.4",
+]
+
+[project.urls]
+"Homepage" = "https://jesse.trade"
+"Documentation" = "https://docs.jesse.trade"
+"Repository" = "https://github.com/jesse-ai/jesse"
+"Bug Reports" = "https://github.com/jesse-ai/jesse/issues"
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
+module-name = "jesse_rust"
+python-source = "."
+
+[tool.cibuildwheel]
+# Build for common Python versions and platforms
+build = "cp310-* cp311-* cp312-* cp313-*"
+skip = "*-win32 *-manylinux_i686 *-musllinux_i686"
+
+[tool.cibuildwheel.macos]
+# macOS builds
+archs = ["x86_64", "arm64"]
+
+[tool.cibuildwheel.linux]
+# Linux builds
+archs = ["x86_64", "aarch64"]
+
+[tool.cibuildwheel.windows]
+# Windows builds
+archs = ["AMD64"]
