@@ -6,7 +6,7 @@ use indicators::*;
 
 /// A Python module implemented in Rust.
 #[pymodule]
-fn jesse_rust(_py: Python, m: &PyModule) -> PyResult<()> {
+fn jesse_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Indicators
     m.add_function(wrap_pyfunction!(rsi, m)?)?;
     m.add_function(wrap_pyfunction!(kama, m)?)?;
