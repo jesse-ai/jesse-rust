@@ -1696,7 +1696,7 @@ pub fn vwma(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<PyArra
 
 /// Calculate Stochastic Oscillator - Ultra-optimized version
 #[pyfunction]
-pub fn stoch(candles: PyReadonlyArray2<f64>, fastk_period: usize, slowk_period: usize, slowk_matype: usize, slowd_period: usize, slowd_matype: usize) -> PyResult<(Py<PyArray1<f64>>, Py<PyArray1<f64>>)> {
+pub fn stoch(candles: PyReadonlyArray2<f64>, fastk_period: usize, slowk_period: usize, _slowk_matype: usize, slowd_period: usize, _slowd_matype: usize) -> PyResult<(Py<PyArray1<f64>>, Py<PyArray1<f64>>)> {
     Python::with_gil(|py| {
         let candles_array = candles.as_array();
         let n = candles_array.nrows();
