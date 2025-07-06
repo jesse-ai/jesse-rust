@@ -24,8 +24,8 @@ pip install jesse-rust
 
 ## Requirements
 
-- Python 3.8 or higher
-- NumPy 1.19.0 or higher
+- Python 3.10 or higher
+- NumPy 1.26.4 or higher
 
 ## Usage
 
@@ -74,10 +74,6 @@ maturin build --release
 For development builds:
 
 ```bash
-# Debug build (faster compilation, slower runtime)
-maturin develop
-
-# Release build (slower compilation, faster runtime)
 maturin develop --release
 ```
 
