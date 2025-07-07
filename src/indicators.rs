@@ -2198,3 +2198,123 @@ pub fn cvi(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<PyArray
         Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
+
+/// Calculate DTI (Dynamic Trend Index) by William Blau - Optimized version
+#[pyfunction]
+pub fn dti(candles: PyReadonlyArray2<f64>, r: usize, s: usize, u: usize) -> PyResult<Py<PyArray1<f64>>> {
+    Python::with_gil(|py| {
+        let candles_array = candles.as_array();
+        let n = candles_array.nrows();
+        
+        let mut result = Array1::<f64>::from_elem(n, f64::NAN);
+        
+        if n <= r || n <= s || n <= u {
+            return Ok(PyArray1::from_array(py, &result).to_owned());
+        }
+        
+        // Extract high and low price data
+        let high = candles_array.column(3);
+        let low = candles_array.column(4);
+        
+        // Shift high and low by 1 period
+        let mut high_1 = Array1::<f64>::from_elem(n, f64::NAN);
+        let mut low_1 = Array1::<f64>::from_elem(n, f64::NAN);
+        
+        for i in 1..n {
+            high_1[i] = high[i - 1];
+            low_1[i] = low[i - 1];
+        }
+        
+        // Compute upward and downward movements
+        let mut xhmu = Array1::<f64>::zeros(n);
+        let mut xlmd = Array1::<f64>::zeros(n);
+        
+        for i in 1..n {
+            let high_diff = high[i] - high_1[i];
+            if high_diff > 0.0 {
+                xhmu[i] = high_diff;
+            }
+            
+            let low_diff = low[i] - low_1[i];
+            if low_diff < 0.0 {
+                xlmd[i] = -low_diff;
+            }
+        }
+        
+        // Calculate xPrice and xPriceAbs
+        let mut xprice = Array1::<f64>::zeros(n);
+        let mut xprice_abs = Array1::<f64>::zeros(n);
+        
+        for i in 0..n {
+            xprice[i] = xhmu[i] - xlmd[i];
+            xprice_abs[i] = xprice[i].abs();
+        }
+        
+        // Apply triple EMA to xPrice
+        let r_alpha = 2.0 / (r as f64 + 1.0);
+        let s_alpha = 2.0 / (s as f64 + 1.0);
+        let u_alpha = 2.0 / (u as f64 + 1.0);
+        
+        let r_one_minus_alpha = 1.0 - r_alpha;
+        let s_one_minus_alpha = 1.0 - s_alpha;
+        let u_one_minus_alpha = 1.0 - u_alpha;
+        
+        // First stage EMA on xPrice
+        let mut temp = Array1::<f64>::zeros(n);
+        temp[0] = xprice[0];
+        for i in 1..n {
+            temp[i] = r_alpha * xprice[i] + r_one_minus_alpha * temp[i - 1];
+        }
+        
+        // Second stage EMA
+        let mut temp2 = Array1::<f64>::zeros(n);
+        temp2[0] = temp[0];
+        for i in 1..n {
+            temp2[i] = s_alpha * temp[i] + s_one_minus_alpha * temp2[i - 1];
+        }
+        
+        // Third stage EMA (xuXA)
+        let mut xu_xa = Array1::<f64>::zeros(n);
+        xu_xa[0] = temp2[0];
+        for i in 1..n {
+            xu_xa[i] = u_alpha * temp2[i] + u_one_minus_alpha * xu_xa[i - 1];
+        }
+        
+        // Apply triple EMA to xPriceAbs
+        // First stage EMA on xPriceAbs
+        let mut temp_abs = Array1::<f64>::zeros(n);
+        temp_abs[0] = xprice_abs[0];
+        for i in 1..n {
+            temp_abs[i] = r_alpha * xprice_abs[i] + r_one_minus_alpha * temp_abs[i - 1];
+        }
+        
+        // Second stage EMA
+        let mut temp2_abs = Array1::<f64>::zeros(n);
+        temp2_abs[0] = temp_abs[0];
+        for i in 1..n {
+            temp2_abs[i] = s_alpha * temp_abs[i] + s_one_minus_alpha * temp2_abs[i - 1];
+        }
+        
+        // Third stage EMA (xuXAAbs)
+        let mut xu_xa_abs = Array1::<f64>::zeros(n);
+        xu_xa_abs[0] = temp2_abs[0];
+        for i in 1..n {
+            xu_xa_abs[i] = u_alpha * temp2_abs[i] + u_one_minus_alpha * xu_xa_abs[i - 1];
+        }
+        
+        // Calculate Val1 and Val2
+        let val1 = xu_xa.mapv(|x| x * 100.0);
+        let val2 = xu_xa_abs;
+        
+        // Calculate DTI value
+        for i in 0..n {
+            if val2[i] != 0.0 {
+                result[i] = val1[i] / val2[i];
+            } else {
+                result[i] = 0.0;
+            }
+        }
+        
+        Ok(PyArray1::from_array(py, &result).to_owned())
+    })
+}
