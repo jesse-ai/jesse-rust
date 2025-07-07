@@ -2113,3 +2113,88 @@ pub fn adosc(candles: PyReadonlyArray2<f64>, fast_period: usize, slow_period: us
         Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
+
+/// Calculate EMA (Exponential Moving Average) - Optimized version
+#[pyfunction]
+pub fn ema(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1<f64>>> {
+    Python::with_gil(|py| {
+        let source_array = source.as_array();
+        let n = source_array.len();
+        
+        let mut result = Array1::<f64>::from_elem(n, f64::NAN);
+        
+        if n == 0 {
+            return Ok(PyArray1::from_array(py, &result).to_owned());
+        }
+        
+        // Return NaN if period is greater than the data length
+        if period > n {
+            return Ok(PyArray1::from_array(py, &result).to_owned());
+        }
+        
+        if n == 1 {
+            result[0] = source_array[0];
+            return Ok(PyArray1::from_array(py, &result).to_owned());
+        }
+        
+        let alpha = 2.0 / (period as f64 + 1.0);
+        let one_minus_alpha = 1.0 - alpha;
+        
+        // Initialize first value
+        result[0] = source_array[0];
+        
+        // Calculate EMA efficiently  
+        for i in 1..n {
+            result[i] = alpha * source_array[i] + one_minus_alpha * result[i - 1];
+        }
+        
+        Ok(PyArray1::from_array(py, &result).to_owned())
+    })
+}
+
+/// Calculate CVI (Chaikins Volatility Indicator) - Ultra-optimized version
+#[pyfunction]
+pub fn cvi(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<PyArray1<f64>>> {
+    Python::with_gil(|py| {
+        let candles_array = candles.as_array();
+        let n = candles_array.nrows();
+        
+        let mut result = Array1::<f64>::from_elem(n, f64::NAN);
+        
+        if n <= period {
+            return Ok(PyArray1::from_array(py, &result).to_owned());
+        }
+        
+        // Extract high and low price data
+        let high = candles_array.column(3);
+        let low = candles_array.column(4);
+        
+        // Calculate high-low difference
+        let mut hl_diff = Array1::<f64>::zeros(n);
+        for i in 0..n {
+            hl_diff[i] = high[i] - low[i];
+        }
+        
+        // Calculate EMA of the high-low difference
+        let alpha = 2.0 / (period as f64 + 1.0);
+        let one_minus_alpha = 1.0 - alpha;
+        
+        let mut ema_diff = Array1::<f64>::zeros(n);
+        ema_diff[0] = hl_diff[0];
+        
+        for i in 1..n {
+            ema_diff[i] = alpha * hl_diff[i] + one_minus_alpha * ema_diff[i - 1];
+        }
+        
+        // Calculate rate of change
+        for i in period..n {
+            if ema_diff[i - period] != 0.0 {
+                result[i] = ((ema_diff[i] - ema_diff[i - period]) / ema_diff[i - period]) * 100.0;
+            } else {
+                result[i] = 0.0;
+            }
+        }
+        
+        Ok(PyArray1::from_array(py, &result).to_owned())
+    })
+}
