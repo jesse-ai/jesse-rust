@@ -17,6 +17,7 @@ fn jesse_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(macd, m)?)?;
     m.add_function(wrap_pyfunction!(bollinger_bands_width, m)?)?;
     m.add_function(wrap_pyfunction!(bollinger_bands, m)?)?;
+    m.add_function(wrap_pyfunction!(adosc, m)?)?;
     
     // Utility functions (now in indicators.rs)
     m.add_function(wrap_pyfunction!(shift, m)?)?;

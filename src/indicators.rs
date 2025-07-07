@@ -2041,3 +2041,75 @@ fn sma_array(source: &Array1<f64>, period: usize) -> Array1<f64> {
     
     result
 }
+
+/// Calculate ADOSC (Chaikin A/D Oscillator) - Ultra-optimized version
+#[pyfunction]
+pub fn adosc(candles: PyReadonlyArray2<f64>, fast_period: usize, slow_period: usize) -> PyResult<Py<PyArray1<f64>>> {
+    Python::with_gil(|py| {
+        let candles_array = candles.as_array();
+        let n = candles_array.nrows();
+        
+        let mut result = Array1::<f64>::from_elem(n, f64::NAN);
+        
+        if n == 0 {
+            return Ok(PyArray1::from_array(py, &result).to_owned());
+        }
+        
+        if n == 1 {
+            result[0] = 0.0;
+            return Ok(PyArray1::from_array(py, &result).to_owned());
+        }
+        
+        // Extract price and volume data
+        let high = candles_array.column(3);
+        let low = candles_array.column(4);
+        let close = candles_array.column(2);
+        let volume = candles_array.column(5);
+        
+        // Step 1: Calculate Money Flow Multiplier and Money Flow Volume
+        let mut mf_volume = Array1::<f64>::zeros(n);
+        for i in 0..n {
+            let price_range = high[i] - low[i];
+            let multiplier = if price_range != 0.0 {
+                ((close[i] - low[i]) - (high[i] - close[i])) / price_range
+            } else {
+                0.0
+            };
+            mf_volume[i] = multiplier * volume[i];
+        }
+        
+        // Step 2: Calculate A/D Line (cumulative sum of money flow volume)
+        let mut ad_line = Array1::<f64>::zeros(n);
+        ad_line[0] = mf_volume[0];
+        for i in 1..n {
+            ad_line[i] = ad_line[i - 1] + mf_volume[i];
+        }
+        
+        // Step 3: Calculate EMAs of A/D Line
+        let fast_alpha = 2.0 / (fast_period as f64 + 1.0);
+        let slow_alpha = 2.0 / (slow_period as f64 + 1.0);
+        let fast_one_minus_alpha = 1.0 - fast_alpha;
+        let slow_one_minus_alpha = 1.0 - slow_alpha;
+        
+        // Calculate fast EMA
+        let mut fast_ema = Array1::<f64>::zeros(n);
+        fast_ema[0] = ad_line[0];
+        for i in 1..n {
+            fast_ema[i] = fast_alpha * ad_line[i] + fast_one_minus_alpha * fast_ema[i - 1];
+        }
+        
+        // Calculate slow EMA
+        let mut slow_ema = Array1::<f64>::zeros(n);
+        slow_ema[0] = ad_line[0];
+        for i in 1..n {
+            slow_ema[i] = slow_alpha * ad_line[i] + slow_one_minus_alpha * slow_ema[i - 1];
+        }
+        
+        // Step 4: Calculate ADOSC = Fast EMA - Slow EMA
+        for i in 0..n {
+            result[i] = fast_ema[i] - slow_ema[i];
+        }
+        
+        Ok(PyArray1::from_array(py, &result).to_owned())
+    })
+}
