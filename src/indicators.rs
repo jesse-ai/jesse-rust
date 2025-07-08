@@ -2318,3 +2318,208 @@ pub fn dti(candles: PyReadonlyArray2<f64>, r: usize, s: usize, u: usize) -> PyRe
         Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
+
+/// Calculate ZLEMA (Zero-Lag Exponential Moving Average)
+#[pyfunction]
+pub fn zlema(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1<f64>>> {
+    Python::with_gil(|py| {
+        let source_array = source.as_array();
+        let n = source_array.len();
+        let mut result = Array1::<f64>::from_elem(n, f64::NAN);
+        
+        // Return early if we don't have enough data
+        if n <= period {
+            return Ok(PyArray1::from_array(py, &result).to_owned());
+        }
+        
+        // Calculate lag
+        let lag = (period - 1) / 2;
+        
+        // Calculate the smoothing factor
+        let alpha = 2.0 / (period as f64 + 1.0);
+        
+        // Pre-calculate the EMA data = price + (price - price_lag)
+        let mut ema_data = Array1::<f64>::from_elem(n, 0.0);
+        for i in lag..n {
+            ema_data[i] = source_array[i] + (source_array[i] - source_array[i - lag]);
+        }
+        
+        // First value with enough data is just the ema_data at that point
+        result[lag] = ema_data[lag];
+        
+        // Calculate ZLEMA for the rest of the points
+        for i in (lag + 1)..n {
+            result[i] = alpha * ema_data[i] + (1.0 - alpha) * result[i - 1];
+        }
+        
+        Ok(PyArray1::from_array(py, &result).to_owned())
+    })
+}
+
+/// Calculate EMA for internal use in Wavetrend indicator
+fn ema_for_wt(source: &Array1<f64>, period: usize) -> Array1<f64> {
+    let n = source.len();
+    let mut result = Array1::<f64>::zeros(n);
+    
+    // Not enough data
+    if n == 0 {
+        return result;
+    }
+    
+    // Calculate alpha
+    let alpha = 2.0 / (period as f64 + 1.0);
+    
+    // First value is the source
+    result[0] = source[0];
+    
+    // Calculate EMA for the rest
+    for i in 1..n {
+        result[i] = alpha * source[i] + (1.0 - alpha) * result[i - 1];
+    }
+    
+    result
+}
+
+/// Calculate SMA for internal use in Wavetrend indicator
+fn sma_for_wt(source: &Array1<f64>, period: usize) -> Array1<f64> {
+    let n = source.len();
+    let mut result = Array1::<f64>::zeros(n);
+    
+    if n == 0 || period == 0 {
+        return result;
+    }
+    
+    // Calculate initial values with partial windows
+    let mut cumsum = 0.0;
+    for i in 0..period.min(n) {
+        cumsum += source[i];
+        result[i] = cumsum / (i as f64 + 1.0);
+    }
+    
+    if n <= period {
+        return result;
+    }
+    
+    // For the remaining windows, use a rolling approach
+    for i in period..n {
+        result[i] = result[i-1] + (source[i] - source[i-period]) / period as f64;
+    }
+    
+    result
+}
+
+/// Calculate Wavetrend indicator
+#[pyfunction]
+pub fn wt(
+    candles: PyReadonlyArray2<f64>,
+    wtchannellen: usize,
+    wtaveragelen: usize,
+    wtmalen: usize,
+    oblevel: f64,
+    oslevel: f64,
+    source_type: &str
+) -> PyResult<(Py<PyArray1<f64>>, Py<PyArray1<f64>>, Py<PyArray1<bool>>, Py<PyArray1<bool>>, Py<PyArray1<bool>>, Py<PyArray1<bool>>, Py<PyArray1<f64>>)> {
+    Python::with_gil(|py| {
+        // Extract data from candles based on source_type
+        let candles_array = candles.as_array();
+        let n = candles_array.shape()[0];
+        
+        // Get source data based on source_type
+        let src = match source_type {
+            "open" => {
+                let opens = candles_array.slice(s![.., 1]);
+                opens.to_owned()
+            },
+            "high" => {
+                let highs = candles_array.slice(s![.., 3]);
+                highs.to_owned()
+            },
+            "low" => {
+                let lows = candles_array.slice(s![.., 4]);
+                lows.to_owned()
+            },
+            "close" => {
+                let closes = candles_array.slice(s![.., 2]);
+                closes.to_owned()
+            },
+            "hlc3" => {
+                let highs = candles_array.slice(s![.., 3]);
+                let lows = candles_array.slice(s![.., 4]);
+                let closes = candles_array.slice(s![.., 2]);
+                
+                let mut result = Array1::<f64>::zeros(n);
+                for i in 0..n {
+                    result[i] = (highs[i] + lows[i] + closes[i]) / 3.0;
+                }
+                result
+            },
+            "ohlc4" => {
+                let opens = candles_array.slice(s![.., 1]);
+                let highs = candles_array.slice(s![.., 3]);
+                let lows = candles_array.slice(s![.., 4]);
+                let closes = candles_array.slice(s![.., 2]);
+                
+                let mut result = Array1::<f64>::zeros(n);
+                for i in 0..n {
+                    result[i] = (opens[i] + highs[i] + lows[i] + closes[i]) / 4.0;
+                }
+                result
+            },
+            _ => {
+                // Default to close
+                let closes = candles_array.slice(s![.., 2]);
+                closes.to_owned()
+            }
+        };
+        
+        // Calculate Wavetrend components
+        let esa = ema_for_wt(&src, wtchannellen);
+        
+        // Calculate absolute difference
+        let mut abs_diff = Array1::<f64>::zeros(n);
+        for i in 0..n {
+            abs_diff[i] = (src[i] - esa[i]).abs();
+        }
+        
+        let de = ema_for_wt(&abs_diff, wtchannellen);
+        
+        // Calculate CI (avoid division by zero)
+        let mut ci = Array1::<f64>::zeros(n);
+        for i in 0..n {
+            ci[i] = if de[i] == 0.0 {
+                0.0
+            } else {
+                (src[i] - esa[i]) / (0.015 * de[i])
+            };
+        }
+        
+        // Calculate wt1 and wt2
+        let wt1 = ema_for_wt(&ci, wtaveragelen);
+        let wt2 = sma_for_wt(&wt1, wtmalen);
+        
+        // Calculate additional components
+        let mut wtvwap = Array1::<f64>::zeros(n);
+        let mut wtcrossup = Array1::<bool>::from_elem(n, false);
+        let mut wtcrossdown = Array1::<bool>::from_elem(n, false);
+        let mut wtoversold = Array1::<bool>::from_elem(n, false);
+        let mut wtoverbought = Array1::<bool>::from_elem(n, false);
+        
+        for i in 0..n {
+            wtvwap[i] = wt1[i] - wt2[i];
+            wtcrossup[i] = wt2[i] - wt1[i] <= 0.0;
+            wtcrossdown[i] = wt2[i] - wt1[i] >= 0.0;
+            wtoversold[i] = wt2[i] <= oslevel;
+            wtoverbought[i] = wt2[i] >= oblevel;
+        }
+        
+        Ok((
+            PyArray1::from_array(py, &wt1).to_owned(),
+            PyArray1::from_array(py, &wt2).to_owned(),
+            PyArray1::from_array(py, &wtcrossup).to_owned(),
+            PyArray1::from_array(py, &wtcrossdown).to_owned(),
+            PyArray1::from_array(py, &wtoversold).to_owned(),
+            PyArray1::from_array(py, &wtoverbought).to_owned(),
+            PyArray1::from_array(py, &wtvwap).to_owned()
+        ))
+    })
+}
