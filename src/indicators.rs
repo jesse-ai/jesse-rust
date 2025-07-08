@@ -2,6 +2,8 @@ use pyo3::prelude::*;
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2};
 use ndarray::{Array1, s, ArrayView1};
 use pyo3::types::PyDict;
+use rust_decimal::Decimal;
+use std::str::FromStr;
 
 /// Calculate RSI (Relative Strength Index)
 #[pyfunction]
@@ -3263,4 +3265,42 @@ pub fn t3(
             Ok(PyArray1::from_array(py, &last_result).to_owned())
         }
     })
+}
+
+/// Sums two floats without the rounding issue by using precise decimal arithmetic
+#[pyfunction]
+pub fn sum_floats(float1: f64, float2: f64) -> PyResult<f64> {
+    // Convert floats to Decimal for precise arithmetic
+    let decimal1 = Decimal::from_str(&float1.to_string())
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid float1: {}", e)))?;
+    let decimal2 = Decimal::from_str(&float2.to_string())
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid float2: {}", e)))?;
+    
+    // Perform precise addition
+    let result_decimal = decimal1 + decimal2;
+    
+    // Convert back to f64
+    let result = result_decimal.to_string().parse::<f64>()
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Result conversion error: {}", e)))?;
+    
+    Ok(result)
+}
+
+/// Subtracts two floats without the rounding issue by using precise decimal arithmetic
+#[pyfunction]
+pub fn subtract_floats(float1: f64, float2: f64) -> PyResult<f64> {
+    // Convert floats to Decimal for precise arithmetic
+    let decimal1 = Decimal::from_str(&float1.to_string())
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid float1: {}", e)))?;
+    let decimal2 = Decimal::from_str(&float2.to_string())
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid float2: {}", e)))?;
+    
+    // Perform precise subtraction
+    let result_decimal = decimal1 - decimal2;
+    
+    // Convert back to f64
+    let result = result_decimal.to_string().parse::<f64>()
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Result conversion error: {}", e)))?;
+    
+    Ok(result)
 }

@@ -57,5 +57,9 @@ fn jesse_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(vi, m)?)?;
     m.add_function(wrap_pyfunction!(t3, m)?)?;
     
+    // Utility functions
+    m.add_function(wrap_pyfunction!(sum_floats, m)?)?;
+    m.add_function(wrap_pyfunction!(subtract_floats, m)?)?;
+    
     Ok(())
 }
