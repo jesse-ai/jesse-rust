@@ -21,6 +21,9 @@ fn jesse_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ema, m)?)?;
     m.add_function(wrap_pyfunction!(cvi, m)?)?;
     m.add_function(wrap_pyfunction!(dti, m)?)?;
+    m.add_function(wrap_pyfunction!(dx, m)?)?; // New indicator
+    m.add_function(wrap_pyfunction!(fosc, m)?)?; // New indicator
+    m.add_function(wrap_pyfunction!(frama, m)?)?; // New indicator
     
     // Utility functions (now in indicators.rs)
     m.add_function(wrap_pyfunction!(shift, m)?)?;

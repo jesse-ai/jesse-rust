@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2};
-use ndarray::{Array1, s};
+use ndarray::{Array1, s, ArrayView1};
 use pyo3::types::PyDict;
 
 /// Calculate RSI (Relative Strength Index)
@@ -2521,5 +2521,471 @@ pub fn wt(
             PyArray1::from_array(py, &wtoverbought).to_owned(),
             PyArray1::from_array(py, &wtvwap).to_owned()
         ))
+    })
+}
+
+/// Calculate RMA (Relative Moving Average) for internal use
+fn rma_array(source: &Array1<f64>, period: usize) -> Array1<f64> {
+    let n = source.len();
+    let mut result = Array1::<f64>::zeros(n);
+    
+    if n == 0 || period == 0 {
+        return result;
+    }
+    
+    let alpha = 1.0 / period as f64;
+    result[0] = source[0];
+    
+    for i in 1..n {
+        result[i] = alpha * source[i] + (1.0 - alpha) * result[i - 1];
+    }
+    
+    result
+}
+
+/// Calculate DX (Directional Movement Index) - Ultra-optimized version
+#[pyfunction]
+pub fn dx(
+    candles: PyReadonlyArray2<f64>,
+    di_length: usize,
+    adx_smoothing: usize,
+    sequential: bool
+) -> PyResult<(Py<PyArray1<f64>>, Py<PyArray1<f64>>, Py<PyArray1<f64>>)> {
+    Python::with_gil(|py| {
+        let candles_array = candles.as_array();
+        let n = candles_array.shape()[0];
+        
+        if n < 2 || di_length == 0 || adx_smoothing == 0 {
+            let empty = Array1::<f64>::from_elem(if sequential { n } else { 1 }, f64::NAN);
+            return Ok((
+                PyArray1::from_array(py, &empty).to_owned(),
+                PyArray1::from_array(py, &empty).to_owned(),
+                PyArray1::from_array(py, &empty).to_owned(),
+            ));
+        }
+        
+        let high = candles_array.slice(s![.., 3]);
+        let low = candles_array.slice(s![.., 4]);
+        let close = candles_array.slice(s![.., 2]);
+        
+        // Ultra-fast path for non-sequential mode
+        if !sequential {
+            let required_len = di_length + adx_smoothing;
+            if n < required_len {
+                let result = Array1::<f64>::from_elem(1, f64::NAN);
+                return Ok((
+                    PyArray1::from_array(py, &result).to_owned(),
+                    PyArray1::from_array(py, &result).to_owned(),
+                    PyArray1::from_array(py, &result).to_owned(),
+                ));
+            }
+            
+            // Wilder's smoothing factor
+            let alpha = 1.0 / di_length as f64;
+            let one_minus_alpha = 1.0 - alpha;
+            
+            // Initialize accumulators with first period sum
+            let mut tr_sum = 0.0;
+            let mut plus_dm_sum = 0.0;
+            let mut minus_dm_sum = 0.0;
+            
+            // First TR value
+            tr_sum = high[0usize] - low[0usize];
+            
+            // Accumulate initial sums
+            for i in 1..di_length {
+                let up = high[i] - high[i - 1];
+                let down = low[i - 1] - low[i];
+                
+                if up > down && up > 0.0 {
+                    plus_dm_sum += up;
+                }
+                if down > up && down > 0.0 {
+                    minus_dm_sum += down;
+                }
+                
+                let tr1 = high[i] - low[i];
+                let tr2 = (high[i] - close[i - 1]).abs();
+                let tr3 = (low[i] - close[i - 1]).abs();
+                tr_sum += tr1.max(tr2).max(tr3);
+            }
+            
+            // Initial smoothed values
+            let mut tr_smooth = tr_sum;
+            let mut plus_dm_smooth = plus_dm_sum;
+            let mut minus_dm_smooth = minus_dm_sum;
+            
+            // Buffer for DX values to calculate ADX
+            let mut dx_values = Vec::with_capacity(adx_smoothing);
+            
+            // Calculate DX values for ADX smoothing period
+            for i in di_length..(di_length + adx_smoothing) {
+                let up = high[i] - high[i - 1];
+                let down = low[i - 1] - low[i];
+                
+                let plus_dm = if up > down && up > 0.0 { up } else { 0.0 };
+                let minus_dm = if down > up && down > 0.0 { down } else { 0.0 };
+                
+                let tr1 = high[i] - low[i];
+                let tr2 = (high[i] - close[i - 1]).abs();
+                let tr3 = (low[i] - close[i - 1]).abs();
+                let tr = tr1.max(tr2).max(tr3);
+                
+                // Wilder's smoothing
+                tr_smooth = one_minus_alpha * tr_smooth + alpha * tr;
+                plus_dm_smooth = one_minus_alpha * plus_dm_smooth + alpha * plus_dm;
+                minus_dm_smooth = one_minus_alpha * minus_dm_smooth + alpha * minus_dm;
+                
+                // Calculate DX
+                if tr_smooth > 0.0 {
+                    let plus_di = plus_dm_smooth / tr_smooth;
+                    let minus_di = minus_dm_smooth / tr_smooth;
+                    let di_sum = plus_di + minus_di;
+                    
+                    if di_sum > 0.0 {
+                        dx_values.push(100.0 * (plus_di - minus_di).abs() / di_sum);
+                    } else {
+                        dx_values.push(0.0);
+                    }
+                } else {
+                    dx_values.push(0.0);
+                }
+            }
+            
+            // Initial ADX as average
+            let mut adx = dx_values.iter().sum::<f64>() / adx_smoothing as f64;
+            
+            // Continue for remaining periods if any
+            for i in (di_length + adx_smoothing)..n {
+                let up = high[i] - high[i - 1];
+                let down = low[i - 1] - low[i];
+                
+                let plus_dm = if up > down && up > 0.0 { up } else { 0.0 };
+                let minus_dm = if down > up && down > 0.0 { down } else { 0.0 };
+                
+                let tr1 = high[i] - low[i];
+                let tr2 = (high[i] - close[i - 1]).abs();
+                let tr3 = (low[i] - close[i - 1]).abs();
+                let tr = tr1.max(tr2).max(tr3);
+                
+                // Wilder's smoothing
+                tr_smooth = one_minus_alpha * tr_smooth + alpha * tr;
+                plus_dm_smooth = one_minus_alpha * plus_dm_smooth + alpha * plus_dm;
+                minus_dm_smooth = one_minus_alpha * minus_dm_smooth + alpha * minus_dm;
+                
+                // Calculate current DX
+                let dx_val = if tr_smooth > 0.0 {
+                    let plus_di = plus_dm_smooth / tr_smooth;
+                    let minus_di = minus_dm_smooth / tr_smooth;
+                    let di_sum = plus_di + minus_di;
+                    if di_sum > 0.0 { 100.0 * (plus_di - minus_di).abs() / di_sum } else { 0.0 }
+                } else { 0.0 };
+                
+                // Smooth ADX
+                adx = (one_minus_alpha * adx * adx_smoothing as f64 + alpha * dx_val * adx_smoothing as f64) / adx_smoothing as f64;
+            }
+            
+            // Final DI values
+            let plus_di = if tr_smooth > 0.0 { 100.0 * plus_dm_smooth / tr_smooth } else { 0.0 };
+            let minus_di = if tr_smooth > 0.0 { 100.0 * minus_dm_smooth / tr_smooth } else { 0.0 };
+            
+            let adx_result = Array1::from_elem(1, adx);
+            let plus_di_result = Array1::from_elem(1, plus_di);
+            let minus_di_result = Array1::from_elem(1, minus_di);
+            
+            return Ok((
+                PyArray1::from_array(py, &adx_result).to_owned(),
+                PyArray1::from_array(py, &plus_di_result).to_owned(),
+                PyArray1::from_array(py, &minus_di_result).to_owned(),
+            ));
+        }
+        
+        // Sequential mode - optimized full array calculation
+        let mut adx_result = Array1::<f64>::from_elem(n, f64::NAN);
+        let mut plus_di_result = Array1::<f64>::from_elem(n, f64::NAN);
+        let mut minus_di_result = Array1::<f64>::from_elem(n, f64::NAN);
+        
+        let alpha = 1.0 / di_length as f64;
+        let one_minus_alpha = 1.0 - alpha;
+        
+        let mut tr_smooth = 0.0;
+        let mut plus_dm_smooth = 0.0;
+        let mut minus_dm_smooth = 0.0;
+        
+        // Initialize with first period sum
+        tr_smooth = high[0usize] - low[0usize];
+        
+        for i in 1..n.min(di_length) {
+            let up = high[i] - high[i - 1];
+            let down = low[i - 1] - low[i];
+            
+            if up > down && up > 0.0 {
+                plus_dm_smooth += up;
+            }
+            if down > up && down > 0.0 {
+                minus_dm_smooth += down;
+            }
+            
+            let tr1 = high[i] - low[i];
+            let tr2 = (high[i] - close[i - 1]).abs();
+            let tr3 = (low[i] - close[i - 1]).abs();
+            tr_smooth += tr1.max(tr2).max(tr3);
+        }
+        
+        // Calculate for remaining periods
+        let mut dx_buffer = Vec::new();
+        
+        for i in di_length..n {
+            let up = high[i] - high[i - 1];
+            let down = low[i - 1] - low[i];
+            
+            let plus_dm = if up > down && up > 0.0 { up } else { 0.0 };
+            let minus_dm = if down > up && down > 0.0 { down } else { 0.0 };
+            
+            let tr1 = high[i] - low[i];
+            let tr2 = (high[i] - close[i - 1]).abs();
+            let tr3 = (low[i] - close[i - 1]).abs();
+            let tr = tr1.max(tr2).max(tr3);
+            
+            // Wilder's smoothing
+            tr_smooth = one_minus_alpha * tr_smooth + alpha * tr;
+            plus_dm_smooth = one_minus_alpha * plus_dm_smooth + alpha * plus_dm;
+            minus_dm_smooth = one_minus_alpha * minus_dm_smooth + alpha * minus_dm;
+            
+            if tr_smooth > 0.0 {
+                plus_di_result[i] = 100.0 * plus_dm_smooth / tr_smooth;
+                minus_di_result[i] = 100.0 * minus_dm_smooth / tr_smooth;
+                
+                let di_sum = plus_di_result[i] + minus_di_result[i];
+                let dx_val = if di_sum > 0.0 {
+                    100.0 * (plus_di_result[i] - minus_di_result[i]).abs() / di_sum
+                } else { 0.0 };
+                
+                dx_buffer.push(dx_val);
+                
+                // Calculate ADX when we have enough DX values
+                if dx_buffer.len() == adx_smoothing {
+                    adx_result[i] = dx_buffer.iter().sum::<f64>() / adx_smoothing as f64;
+                    dx_buffer.remove(0);
+                } else if dx_buffer.len() > adx_smoothing {
+                    let prev_adx = adx_result[i - 1];
+                    adx_result[i] = (prev_adx * (adx_smoothing as f64 - 1.0) + dx_val) / adx_smoothing as f64;
+                }
+            }
+        }
+        
+        Ok((
+            PyArray1::from_array(py, &adx_result).to_owned(),
+            PyArray1::from_array(py, &plus_di_result).to_owned(),
+            PyArray1::from_array(py, &minus_di_result).to_owned(),
+        ))
+    })
+}
+
+/// Calculate FOSC (Forecast Oscillator)
+#[pyfunction]
+pub fn fosc(
+    candles: PyReadonlyArray2<f64>, 
+    period: usize, 
+    source_type: &str
+) -> PyResult<Py<PyArray1<f64>>> {
+    Python::with_gil(|py| {
+        let candles_array = candles.as_array();
+        let n = candles_array.shape()[0];
+        let mut result = Array1::<f64>::from_elem(n, 0.0);
+        
+        if n < period || period == 0 {
+            return Ok(PyArray1::from_array(py, &result).to_owned());
+        }
+        
+        // Extract source based on source_type
+        let source = match source_type.to_lowercase().as_str() {
+            "open" => candles_array.slice(s![.., 1]).to_owned(),
+            "high" => candles_array.slice(s![.., 3]).to_owned(),
+            "low" => candles_array.slice(s![.., 4]).to_owned(),
+            "close" => candles_array.slice(s![.., 2]).to_owned(),
+            "hl2" => {
+                let high = candles_array.slice(s![.., 3]);
+                let low = candles_array.slice(s![.., 4]);
+                (&high + &low) / 2.0
+            },
+            "hlc3" => {
+                let high = candles_array.slice(s![.., 3]);
+                let low = candles_array.slice(s![.., 4]);
+                let close = candles_array.slice(s![.., 2]);
+                (&high + &low + &close) / 3.0
+            },
+            "ohlc4" => {
+                let open = candles_array.slice(s![.., 1]);
+                let high = candles_array.slice(s![.., 3]);
+                let low = candles_array.slice(s![.., 4]);
+                let close = candles_array.slice(s![.., 2]);
+                (&open + &high + &low + &close) / 4.0
+            },
+            _ => candles_array.slice(s![.., 2]).to_owned(), // Default to close
+        };
+        
+        let period_f64 = period as f64;
+        let sum_x: f64 = (0..period).map(|i| i as f64).sum();
+        let mean_x = sum_x / period_f64;
+        let sum_xx: f64 = (0..period).map(|i| (i as f64)*(i as f64)).sum();
+        let denom = sum_xx - sum_x*mean_x;
+        
+        // Prefix sums of y and k*y
+        let mut prefix_y = Array1::<f64>::zeros(n);
+        let mut prefix_xy = Array1::<f64>::zeros(n);
+        let mut cum_y = 0.0;
+        let mut cum_xy = 0.0;
+        for i in 0..n {
+            cum_y += source[i];
+            cum_xy += (i as f64) * source[i];
+            prefix_y[i] = cum_y;
+            prefix_xy[i] = cum_xy;
+        }
+        
+        for end in (period-1)..n {
+            let start = end + 1 - period;
+            let sum_y = if start == 0 { prefix_y[end] } else { prefix_y[end] - prefix_y[start-1] };
+            let raw_sum_xy = if start == 0 { prefix_xy[end] } else { prefix_xy[end] - prefix_xy[start-1] };
+            // Shift x values so that start becomes 0
+            let sum_xy = raw_sum_xy - (start as f64)*sum_y;
+            let mean_y = sum_y / period_f64;
+            let slope = (sum_xy - sum_x*mean_y)/denom;
+            let intercept = mean_y - slope*mean_x;
+            let predicted = slope*(period_f64-1.0)+intercept;
+            let actual = source[end];
+            result[end] = if actual != 0.0 { 100.0*(actual-predicted)/actual } else { 0.0 };
+        }
+        Ok(PyArray1::from_array(py, &result).to_owned())
+    })
+}
+
+/// Helper function for linear regression calculation for FOSC
+fn linear_regression_line(x: &Array1<f64>, y: &ArrayView1<f64>) -> Array1<f64> {
+    let n = x.len() as f64;
+    let sum_x: f64 = x.sum();
+    let sum_y: f64 = y.sum();
+    
+    let mut sum_xy = 0.0;
+    let mut sum_xx = 0.0;
+    
+    for i in 0..x.len() {
+        sum_xy += x[i] * y[i];
+        sum_xx += x[i] * x[i];
+    }
+    
+    let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_xx - sum_x * sum_x);
+    let intercept = (sum_y - slope * sum_x) / n;
+    
+    let mut result = Array1::<f64>::zeros(x.len());
+    for i in 0..x.len() {
+        result[i] = slope * x[i] + intercept;
+    }
+    
+    result
+}
+
+/// Calculate FRAMA (Fractal Adaptive Moving Average)
+#[pyfunction]
+pub fn frama(
+    candles: PyReadonlyArray2<f64>,
+    window: usize,
+    fc: usize,
+    sc: usize
+) -> PyResult<Py<PyArray1<f64>>> {
+    Python::with_gil(|py| {
+        let candles_array = candles.as_array();
+        let n = candles_array.shape()[0];
+        let mut result = Array1::<f64>::from_elem(n, f64::NAN);
+        
+        // Adjust window to be even if it's not
+        let mut n_local = window;
+        if n_local % 2 == 1 {
+            n_local += 1;
+        }
+        
+        if n < n_local {
+            return Ok(PyArray1::from_array(py, &result).to_owned());
+        }
+        
+        // Extract close prices
+        let close = candles_array.slice(s![.., 2]).to_owned();
+        
+        // Calculate w (log of 2/(SC+1))
+        let w = (2.0 / (sc as f64 + 1.0)).ln();
+        
+        // Initialize arrays
+        let mut d = Array1::<f64>::from_elem(n, f64::NAN);
+        let mut alphas = Array1::<f64>::from_elem(n, f64::NAN);
+        
+        // Calculate dimension and alphas
+        for i in n_local..n {
+            let period_slice = candles_array.slice(s![i-n_local..i, ..]);
+            
+            // Extract period high and low
+            let period_high = period_slice.slice(s![.., 3]);
+            let period_low = period_slice.slice(s![.., 4]);
+            
+            // Split into two halves
+            let half = n_local / 2;
+            
+            // First half
+            let v1_high = period_high.slice(s![half..]);
+            let v1_low = period_low.slice(s![half..]);
+            let v1_high_max = v1_high.fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+            let v1_low_min = v1_low.fold(f64::INFINITY, |a, &b| a.min(b));
+            let n1 = (v1_high_max - v1_low_min) / (half as f64);
+            
+            // Second half
+            let v2_high = period_high.slice(s![..half]);
+            let v2_low = period_low.slice(s![..half]);
+            let v2_high_max = v2_high.fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+            let v2_low_min = v2_low.fold(f64::INFINITY, |a, &b| a.min(b));
+            let n2 = (v2_high_max - v2_low_min) / (half as f64);
+            
+            // Entire period
+            let period_high_max = period_high.fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+            let period_low_min = period_low.fold(f64::INFINITY, |a, &b| a.min(b));
+            let n3 = (period_high_max - period_low_min) / (n_local as f64);
+            
+            // Calculate dimension
+            if n1 > 0.0 && n2 > 0.0 && n3 > 0.0 {
+                d[i] = ((n1 + n2).ln() - n3.ln()) / 2.0f64.ln();
+            } else {
+                // Use previous value if calculation is not possible
+                if i > n_local {
+                    d[i] = d[i - 1];
+                } else {
+                    d[i] = 0.0;
+                }
+            }
+            
+            // Calculate alpha
+            let mut old_alpha = (w * (d[i] - 1.0)).exp();
+            old_alpha = old_alpha.max(0.1);
+            old_alpha = old_alpha.min(1.0);
+            
+            let old_n = (2.0 - old_alpha) / old_alpha;
+            let n_val = ((sc as f64 - fc as f64) * ((old_n - 1.0) / (sc as f64 - 1.0))) + fc as f64;
+            let mut alpha = 2.0 / (n_val + 1.0);
+            
+            // Ensure alpha is within bounds
+            if alpha < 2.0 / (sc as f64 + 1.0) {
+                alpha = 2.0 / (sc as f64 + 1.0);
+            } else if alpha > 1.0 {
+                alpha = 1.0;
+            }
+            
+            alphas[i] = alpha;
+        }
+        
+        // Calculate FRAMA
+        result[n_local - 1] = close.slice(s![..n_local]).mean().unwrap_or(0.0);
+        
+        for i in n_local..n {
+            result[i] = (alphas[i] * close[i]) + ((1.0 - alphas[i]) * result[i - 1]);
+        }
+        
+        Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
