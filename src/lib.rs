@@ -52,5 +52,10 @@ fn jesse_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(zlema, m)?)?;
     m.add_function(wrap_pyfunction!(wt, m)?)?;
     
+    // Latest indicators
+    m.add_function(wrap_pyfunction!(vwap, m)?)?;
+    m.add_function(wrap_pyfunction!(vi, m)?)?;
+    m.add_function(wrap_pyfunction!(t3, m)?)?;
+    
     Ok(())
 }

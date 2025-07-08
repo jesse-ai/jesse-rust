@@ -2989,3 +2989,278 @@ pub fn frama(
         Ok(PyArray1::from_array(py, &result).to_owned())
     })
 }
+
+/// Get period identifier from timestamp based on anchor
+fn get_period_from_timestamp(timestamp: f64, anchor: &str) -> i64 {
+    // Convert timestamp from milliseconds to seconds
+    let seconds = (timestamp / 1000.0) as i64;
+    
+    match anchor.to_uppercase().as_str() {
+        "D" => seconds / 86400,        // Daily: 24 * 60 * 60 seconds
+        "H" => seconds / 3600,         // Hourly: 60 * 60 seconds  
+        "M" => seconds / 60,           // Minute: 60 seconds
+        "4H" => seconds / 14400,       // 4 Hour: 4 * 60 * 60 seconds
+        "12H" => seconds / 43200,      // 12 Hour: 12 * 60 * 60 seconds
+        "W" => seconds / 604800,       // Weekly: 7 * 24 * 60 * 60 seconds
+        "MN" => {
+            // Monthly - approximate as 30 days for simplicity
+            seconds / 2592000  // 30 * 24 * 60 * 60 seconds
+        },
+        _ => seconds / 86400,          // Default to daily
+    }
+}
+
+/// Calculate VWAP (Volume Weighted Average Price)
+#[pyfunction]
+pub fn vwap(
+    candles: PyReadonlyArray2<f64>,
+    source_type: &str,
+    anchor: &str,
+    sequential: bool
+) -> PyResult<Py<PyArray1<f64>>> {
+    Python::with_gil(|py| {
+        let candles_array = candles.as_array();
+        let n = candles_array.shape()[0];
+        let mut result = Array1::<f64>::from_elem(n, f64::NAN);
+        
+        if n == 0 {
+            return Ok(PyArray1::from_array(py, &result).to_owned());
+        }
+        
+        // Extract source prices and volumes based on source_type
+        let source = match source_type.to_lowercase().as_str() {
+            "open" => candles_array.slice(s![.., 1]).to_owned(),
+            "high" => candles_array.slice(s![.., 3]).to_owned(),
+            "low" => candles_array.slice(s![.., 4]).to_owned(),
+            "close" => candles_array.slice(s![.., 2]).to_owned(),
+            "hl2" => {
+                let high = candles_array.slice(s![.., 3]);
+                let low = candles_array.slice(s![.., 4]);
+                (&high + &low) / 2.0
+            },
+            "hlc3" => {
+                let high = candles_array.slice(s![.., 3]);
+                let low = candles_array.slice(s![.., 4]);
+                let close = candles_array.slice(s![.., 2]);
+                (&high + &low + &close) / 3.0
+            },
+            "ohlc4" => {
+                let open = candles_array.slice(s![.., 1]);
+                let high = candles_array.slice(s![.., 3]);
+                let low = candles_array.slice(s![.., 4]);
+                let close = candles_array.slice(s![.., 2]);
+                (&open + &high + &low + &close) / 4.0
+            },
+            _ => {
+                // Default to hlc3
+                let high = candles_array.slice(s![.., 3]);
+                let low = candles_array.slice(s![.., 4]);
+                let close = candles_array.slice(s![.., 2]);
+                (&high + &low + &close) / 3.0
+            }
+        };
+        
+        let volume = candles_array.slice(s![.., 5]).to_owned();
+        let timestamps = candles_array.slice(s![.., 0]).to_owned();
+        
+        // Calculate VWAP with anchoring logic
+        let mut cum_vol = 0.0;
+        let mut cum_vol_price = 0.0;
+        let mut current_period = if n > 0 { get_period_from_timestamp(timestamps[0usize], anchor) } else { 0 };
+        
+        for i in 0..n {
+            let period = get_period_from_timestamp(timestamps[i], anchor);
+            
+            // Reset if we've moved to a new period
+            if period != current_period {
+                cum_vol = 0.0;
+                cum_vol_price = 0.0;
+                current_period = period;
+            }
+            
+            let vol_price = volume[i] * source[i];
+            cum_vol_price += vol_price;
+            cum_vol += volume[i];
+            
+            if cum_vol != 0.0 {
+                result[i] = cum_vol_price / cum_vol;
+            }
+        }
+        
+        if sequential {
+            Ok(PyArray1::from_array(py, &result).to_owned())
+        } else {
+            let last_result = Array1::<f64>::from_elem(1, if n > 0 { result[n-1] } else { f64::NAN });
+            Ok(PyArray1::from_array(py, &last_result).to_owned())
+        }
+    })
+}
+
+/// Calculate VI (Vortex Indicator)
+#[pyfunction] 
+pub fn vi(
+    candles: PyReadonlyArray2<f64>,
+    period: usize,
+    sequential: bool
+) -> PyResult<(Py<PyArray1<f64>>, Py<PyArray1<f64>>)> {
+    Python::with_gil(|py| {
+        let candles_array = candles.as_array();
+        let n = candles_array.shape()[0];
+        let mut vi_plus = Array1::<f64>::from_elem(n, f64::NAN);
+        let mut vi_minus = Array1::<f64>::from_elem(n, f64::NAN);
+        
+        if n <= period {
+            return Ok((
+                PyArray1::from_array(py, &vi_plus).to_owned(),
+                PyArray1::from_array(py, &vi_minus).to_owned()
+            ));
+        }
+        
+        let close = candles_array.slice(s![.., 2]).to_owned();
+        let high = candles_array.slice(s![.., 3]).to_owned();
+        let low = candles_array.slice(s![.., 4]).to_owned();
+        
+        // Calculate True Range, VP and VM for each period
+        let mut tr = Array1::<f64>::zeros(n);
+        let mut vp = Array1::<f64>::zeros(n);
+        let mut vm = Array1::<f64>::zeros(n);
+        
+        // First candle
+        if n > 0 {
+            tr[0usize] = high[0usize] - low[0usize];
+        }
+        
+        // Calculate TR, VP, VM for each candle
+        for i in 1..n {
+            let hl = high[i] - low[i];
+            let hpc = (high[i] - close[i - 1]).abs();
+            let lpc = (low[i] - close[i - 1]).abs();
+            tr[i] = hl.max(hpc).max(lpc);
+            
+            vp[i] = (high[i] - low[i - 1]).abs();
+            vm[i] = (low[i] - high[i - 1]).abs();
+        }
+        
+        // Calculate rolling sums and VI values
+        for i in period..n {
+            let start_idx = i + 1 - period;
+            
+            let sum_tr: f64 = tr.slice(s![start_idx..=i]).sum();
+            let sum_vp: f64 = vp.slice(s![start_idx..=i]).sum();
+            let sum_vm: f64 = vm.slice(s![start_idx..=i]).sum();
+            
+            if sum_tr != 0.0 {
+                vi_plus[i] = sum_vp / sum_tr;
+                vi_minus[i] = sum_vm / sum_tr;
+            }
+        }
+        
+        if sequential {
+            Ok((
+                PyArray1::from_array(py, &vi_plus).to_owned(),
+                PyArray1::from_array(py, &vi_minus).to_owned()
+            ))
+        } else {
+            let plus_result = Array1::<f64>::from_elem(1, if n > 0 { vi_plus[n-1] } else { f64::NAN });
+            let minus_result = Array1::<f64>::from_elem(1, if n > 0 { vi_minus[n-1] } else { f64::NAN });
+            Ok((
+                PyArray1::from_array(py, &plus_result).to_owned(),
+                PyArray1::from_array(py, &minus_result).to_owned()
+            ))
+        }
+    })
+}
+
+/// Calculate T3 (Triple Exponential Moving Average)
+#[pyfunction]
+pub fn t3(
+    candles: PyReadonlyArray2<f64>,
+    period: usize,
+    vfactor: f64,
+    source_type: &str,
+    sequential: bool
+) -> PyResult<Py<PyArray1<f64>>> {
+    Python::with_gil(|py| {
+        let candles_array = candles.as_array();
+        let n = candles_array.shape()[0];
+        
+        if n == 0 {
+            let result = Array1::<f64>::from_elem(0, f64::NAN);
+            return Ok(PyArray1::from_array(py, &result).to_owned());
+        }
+        
+        // Extract source based on source_type
+        let source = match source_type.to_lowercase().as_str() {
+            "open" => candles_array.slice(s![.., 1]).to_owned(),
+            "high" => candles_array.slice(s![.., 3]).to_owned(),
+            "low" => candles_array.slice(s![.., 4]).to_owned(),
+            "close" => candles_array.slice(s![.., 2]).to_owned(),
+            "hl2" => {
+                let high = candles_array.slice(s![.., 3]);
+                let low = candles_array.slice(s![.., 4]);
+                (&high + &low) / 2.0
+            },
+            "hlc3" => {
+                let high = candles_array.slice(s![.., 3]);
+                let low = candles_array.slice(s![.., 4]);
+                let close = candles_array.slice(s![.., 2]);
+                (&high + &low + &close) / 3.0
+            },
+            "ohlc4" => {
+                let open = candles_array.slice(s![.., 1]);
+                let high = candles_array.slice(s![.., 3]);
+                let low = candles_array.slice(s![.., 4]);
+                let close = candles_array.slice(s![.., 2]);
+                (&open + &high + &low + &close) / 4.0
+            },
+            _ => candles_array.slice(s![.., 2]).to_owned(), // Default to close
+        };
+        
+        let k = 2.0 / (period as f64 + 1.0);
+        let k_rev = 1.0 - k;
+        
+        // Calculate weights based on volume factor
+        let w1 = -vfactor.powi(3);
+        let w2 = 3.0 * vfactor.powi(2) + 3.0 * vfactor.powi(3);
+        let w3 = -6.0 * vfactor.powi(2) - 3.0 * vfactor - 3.0 * vfactor.powi(3);
+        let w4 = 1.0 + 3.0 * vfactor + vfactor.powi(3) + 3.0 * vfactor.powi(2);
+        
+        // Initialize EMAs
+        let mut e1 = Array1::<f64>::zeros(n);
+        let mut e2 = Array1::<f64>::zeros(n);
+        let mut e3 = Array1::<f64>::zeros(n);
+        let mut e4 = Array1::<f64>::zeros(n);
+        let mut e5 = Array1::<f64>::zeros(n);
+        let mut e6 = Array1::<f64>::zeros(n);
+        let mut t3_result = Array1::<f64>::zeros(n);
+        
+        // Initialize first values
+        if n > 0 {
+            e1[0usize] = source[0usize];
+            e2[0usize] = e1[0usize];
+            e3[0usize] = e2[0usize];
+            e4[0usize] = e3[0usize];
+            e5[0usize] = e4[0usize];
+            e6[0usize] = e5[0usize];
+            t3_result[0usize] = w1 * e6[0usize] + w2 * e5[0usize] + w3 * e4[0usize] + w4 * e3[0usize];
+        }
+        
+        // Calculate all EMAs
+        for i in 1..n {
+            e1[i] = k * source[i] + k_rev * e1[i-1];
+            e2[i] = k * e1[i] + k_rev * e2[i-1];
+            e3[i] = k * e2[i] + k_rev * e3[i-1];
+            e4[i] = k * e3[i] + k_rev * e4[i-1];
+            e5[i] = k * e4[i] + k_rev * e5[i-1];
+            e6[i] = k * e5[i] + k_rev * e6[i-1];
+            t3_result[i] = w1 * e6[i] + w2 * e5[i] + w3 * e4[i] + w4 * e3[i];
+        }
+        
+        if sequential {
+            Ok(PyArray1::from_array(py, &t3_result).to_owned())
+        } else {
+            let last_result = Array1::<f64>::from_elem(1, if n > 0 { t3_result[n-1] } else { f64::NAN });
+            Ok(PyArray1::from_array(py, &last_result).to_owned())
+        }
+    })
+}
