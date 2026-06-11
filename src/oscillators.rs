@@ -2,6 +2,7 @@
 
 use ndarray::{s, Array1};
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2};
+use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use crate::types::{PyArrTuple2, PyArrTuple3};
 
@@ -70,6 +71,66 @@ pub fn rsi(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1
 
         Ok(PyArray1::from_array(py, &result).to_owned())
     })
+}
+
+/// Last value of RSI — identical Wilder recurrence to `rsi`, but skips
+/// allocating the full output series. Bit-for-bit equal to `rsi(...)[-1]`.
+#[pyfunction]
+pub fn rsi_last(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<f64> {
+    let source_array = source.as_array();
+    let n = source_array.len();
+
+    if n == 0 {
+        return Err(PyIndexError::new_err(
+            "index -1 is out of bounds for axis 0 with size 0",
+        ));
+    }
+
+    if n <= period {
+        return Ok(f64::NAN);
+    }
+
+    let mut sum_gain = 0.0;
+    let mut sum_loss = 0.0;
+    for i in 1..=period {
+        let change = source_array[i] - source_array[i - 1];
+        if change > 0.0 {
+            sum_gain += change;
+        } else {
+            sum_loss += change.abs();
+        }
+    }
+
+    let mut avg_gain = sum_gain / period as f64;
+    let mut avg_loss = sum_loss / period as f64;
+
+    let mut last = if avg_loss == 0.0 {
+        100.0
+    } else {
+        let rs = avg_gain / avg_loss;
+        100.0 - (100.0 / (1.0 + rs))
+    };
+
+    for i in (period + 1)..n {
+        let change = source_array[i] - source_array[i - 1];
+        let (current_gain, current_loss) = if change > 0.0 {
+            (change, 0.0)
+        } else {
+            (0.0, change.abs())
+        };
+
+        avg_gain = (avg_gain * (period as f64 - 1.0) + current_gain) / period as f64;
+        avg_loss = (avg_loss * (period as f64 - 1.0) + current_loss) / period as f64;
+
+        last = if avg_loss == 0.0 {
+            100.0
+        } else {
+            let rs = avg_gain / avg_loss;
+            100.0 - (100.0 / (1.0 + rs))
+        };
+    }
+
+    Ok(last)
 }
 
 /// Calculate SRSI (Stochastic RSI) - Optimized version

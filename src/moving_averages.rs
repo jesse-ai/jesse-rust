@@ -2,6 +2,7 @@
 
 use ndarray::{s, Array1};
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2};
+use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 
 use crate::helpers::{get_period_from_timestamp, ih_ema, ih_wma};
@@ -380,6 +381,78 @@ pub fn ema(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1
         
         Ok(PyArray1::from_array(py, &result).to_owned())
     })
+}
+
+/// Last value of EMA — identical recurrence to `ema`, but skips allocating the
+/// full output series. Bit-for-bit equal to `ema(...)[-1]`.
+#[pyfunction]
+pub fn ema_last(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<f64> {
+    let source_array = source.as_array();
+    let n = source_array.len();
+
+    if n == 0 {
+        return Err(PyIndexError::new_err(
+            "index -1 is out of bounds for axis 0 with size 0",
+        ));
+    }
+
+    if period > n {
+        return Ok(f64::NAN);
+    }
+
+    let alpha = 2.0 / (period as f64 + 1.0);
+    let one_minus_alpha = 1.0 - alpha;
+
+    let mut prev = source_array[0];
+    for i in 1..n {
+        prev = alpha * source_array[i] + one_minus_alpha * prev;
+    }
+
+    Ok(prev)
+}
+
+/// Last value of SMA — identical rolling-sum recurrence to `sma`, but skips
+/// allocating the full output series. Bit-for-bit equal to `sma(...)[-1]`.
+#[pyfunction]
+pub fn sma_last(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<f64> {
+    let source_array = source.as_array();
+    let n = source_array.len();
+
+    if n == 0 {
+        return Err(PyIndexError::new_err(
+            "index -1 is out of bounds for axis 0 with size 0",
+        ));
+    }
+
+    if n < period {
+        return Ok(f64::NAN);
+    }
+
+    let mut sum = 0.0;
+    let mut count: i64 = 0;
+    for i in 0..period {
+        if !source_array[i].is_nan() {
+            sum += source_array[i];
+            count += 1;
+        }
+    }
+
+    for i in period..n {
+        if !source_array[i - period].is_nan() {
+            sum -= source_array[i - period];
+            count -= 1;
+        }
+        if !source_array[i].is_nan() {
+            sum += source_array[i];
+            count += 1;
+        }
+    }
+
+    if count > 0 {
+        Ok(sum / count as f64)
+    } else {
+        Ok(f64::NAN)
+    }
 }
 
 /// Calculate ZLEMA (Zero-Lag Exponential Moving Average)
