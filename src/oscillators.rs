@@ -104,13 +104,13 @@ pub fn rsi_last(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<f64> {
     let mut avg_gain = sum_gain / period as f64;
     let mut avg_loss = sum_loss / period as f64;
 
-    let mut last = if avg_loss == 0.0 {
-        100.0
-    } else {
-        let rs = avg_gain / avg_loss;
-        100.0 - (100.0 / (1.0 + rs))
-    };
-
+    // Only the avg_gain/avg_loss recurrences carry state between iterations;
+    // the RSI value itself is a pure function of the FINAL averages, so it is
+    // computed once after the loop instead of being recomputed (two extra
+    // divisions and a branch) on every iteration. Bit-for-bit identical to
+    // `rsi(...)[-1]`.
+    let period_f = period as f64;
+    let period_minus_one = period_f - 1.0;
     for i in (period + 1)..n {
         let change = source_array[i] - source_array[i - 1];
         let (current_gain, current_loss) = if change > 0.0 {
@@ -119,16 +119,16 @@ pub fn rsi_last(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<f64> {
             (0.0, change.abs())
         };
 
-        avg_gain = (avg_gain * (period as f64 - 1.0) + current_gain) / period as f64;
-        avg_loss = (avg_loss * (period as f64 - 1.0) + current_loss) / period as f64;
-
-        last = if avg_loss == 0.0 {
-            100.0
-        } else {
-            let rs = avg_gain / avg_loss;
-            100.0 - (100.0 / (1.0 + rs))
-        };
+        avg_gain = (avg_gain * period_minus_one + current_gain) / period_f;
+        avg_loss = (avg_loss * period_minus_one + current_loss) / period_f;
     }
+
+    let last = if avg_loss == 0.0 {
+        100.0
+    } else {
+        let rs = avg_gain / avg_loss;
+        100.0 - (100.0 / (1.0 + rs))
+    };
 
     Ok(last)
 }
