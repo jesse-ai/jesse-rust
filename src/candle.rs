@@ -1,7 +1,7 @@
 //! Candle transforms / decompositions (Heikin Ashi, EMD, QStick).
 
 use ndarray::ArrayView1;
-use numpy::{PyArray1, PyReadonlyArray2};
+use numpy::{PyArray1, PyReadonlyArray2, PyReadwriteArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use crate::types::{PyArrTuple3, PyArrTuple4};
@@ -100,6 +100,33 @@ pub fn candle_from_one_minutes(candles: PyReadonlyArray2<f64>) -> PyResult<Py<Py
         let out = vec![c[[0, 0]], c[[0, 1]], c[[n - 1, 2]], high, low, volume];
         Ok(PyArray1::from_vec(py, out).to_owned())
     })
+}
+
+/// In-place forward pass of jesse's `_get_fixed_jumped_candle` over a whole
+/// 1m series: when the open of candle i differs from the close of candle i-1,
+/// the open (and high/low when needed) is snapped to the previous close.
+/// The fix only ever reads column 2 (close), which it never writes, so one
+/// forward pass is bit-exact equivalent to applying it candle-by-candle.
+#[pyfunction]
+pub fn fix_jumped_candles(mut candles: PyReadwriteArray2<f64>) -> PyResult<()> {
+    let mut c = candles.as_array_mut();
+    let n = c.nrows();
+    for i in 1..n {
+        let prev_close = c[[i - 1, 2]];
+        let open = c[[i, 1]];
+        if prev_close < open {
+            c[[i, 1]] = prev_close;
+            if prev_close < c[[i, 4]] {
+                c[[i, 4]] = prev_close;
+            }
+        } else if prev_close > open {
+            c[[i, 1]] = prev_close;
+            if prev_close > c[[i, 3]] {
+                c[[i, 3]] = prev_close;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// QStick — SMA of (close - open)

@@ -129,6 +129,7 @@ fn jesse_rust(_py: Python, m: &PyModule) -> PyResult<()> {
 
     // ---- candle transforms --------------------------------------------------
     m.add_function(wrap_pyfunction!(candle::candle_from_one_minutes, m)?)?;
+    m.add_function(wrap_pyfunction!(candle::fix_jumped_candles, m)?)?;
     m.add_function(wrap_pyfunction!(candle::emd, m)?)?;
     m.add_function(wrap_pyfunction!(candle::heikin_ashi_candles, m)?)?;
     m.add_function(wrap_pyfunction!(candle::qstick, m)?)?;
