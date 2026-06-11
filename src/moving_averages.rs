@@ -428,6 +428,26 @@ pub fn sma_last(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<f64> {
         return Ok(f64::NAN);
     }
 
+    // Fast path: when the source has no NaNs (the overwhelmingly common
+    // case — raw candle columns never contain NaN), the NaN branches below
+    // never fire and `count` stays equal to `period` for every window, so a
+    // branch-free loop performs the exact same float operations in the exact
+    // same order — bit-for-bit identical result. Sources with NaNs (e.g.
+    // indicator-on-indicator series) fall through to the original loop.
+    // (works on strided views too — candle columns arrive as non-contiguous
+    // column views, so this must not require as_slice())
+    if !source_array.iter().any(|v| v.is_nan()) {
+        let mut sum = 0.0;
+        for i in 0..period {
+            sum += source_array[i];
+        }
+        for i in period..n {
+            sum -= source_array[i - period];
+            sum += source_array[i];
+        }
+        return Ok(sum / period as f64);
+    }
+
     let mut sum = 0.0;
     let mut count: i64 = 0;
     for i in 0..period {
