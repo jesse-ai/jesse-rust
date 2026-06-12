@@ -138,9 +138,16 @@ pub fn bollinger_bands(source: PyReadonlyArray1<f64>, period: usize, devup: f64,
 }
 
 
-/// Last values of Bollinger Bands — identical rolling-sum recurrence to
-/// `bollinger_bands`, but skips allocating the full output series.
-/// Bit-for-bit equal to the last elements of `bollinger_bands(...)`.
+/// Last values of Bollinger Bands — identical rolling sum / sum-of-squares
+/// recurrence to `bollinger_bands` (same float ops, same order), but skips
+/// allocating the three full output series. Returns `(upper, middle, lower)`,
+/// bit-for-bit equal to the last elements of `bollinger_bands(...)`
+/// (verified by randomized bitwise sweeps; `==` comparison, no tolerance).
+///
+/// Accepts strided (non-contiguous) views, e.g. candle column slices.
+/// Edge cases mirror the array version + `[-1]`: empty input raises
+/// IndexError, `n < period` returns `(NaN, NaN, NaN)`; NaNs in the window
+/// poison the sums exactly as in `bollinger_bands`.
 #[pyfunction]
 pub fn bollinger_bands_last(source: PyReadonlyArray1<f64>, period: usize, devup: f64, devdn: f64) -> PyResult<(f64, f64, f64)> {
     let source_array = source.as_array();
@@ -384,8 +391,14 @@ pub fn atr(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<PyArray
     })
 }
 
-/// Last value of ATR — identical Wilder recurrence to `atr`, but skips
-/// allocating the full output series. Bit-for-bit equal to `atr(...)[-1]`.
+/// Last value of ATR — identical true-range fold and Wilder smoothing
+/// recurrence to `atr` (same float ops, same order), but skips allocating
+/// the full output series. Takes the usual jesse candle matrix (n x 6 rows;
+/// columns 2/3/4 = close/high/low), strided row views included. Bit-for-bit
+/// equal to `atr(...)[-1]` (verified by randomized bitwise sweeps).
+///
+/// Edge cases mirror `atr(...)[-1]`: empty input raises IndexError,
+/// `n < period` returns NaN.
 #[pyfunction]
 pub fn atr_last(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<f64> {
     let candles_array = candles.as_array();

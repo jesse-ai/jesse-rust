@@ -383,8 +383,16 @@ pub fn ema(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1
     })
 }
 
-/// Last value of EMA — identical recurrence to `ema`, but skips allocating the
-/// full output series. Bit-for-bit equal to `ema(...)[-1]`.
+/// Last value of EMA — runs the exact same `prev = alpha*x + (1-alpha)*prev`
+/// recurrence as `ema` (same float ops, same order), but skips allocating and
+/// filling the full output series. Bit-for-bit equal to `ema(...)[-1]`
+/// (verified by randomized bitwise sweeps, `==` comparison, no tolerance).
+///
+/// Accepts strided (non-contiguous) views, e.g. candle column slices.
+/// Edge cases mirror `ema(...)[-1]`: empty input raises IndexError (the same
+/// error indexing `[-1]` on an empty numpy result would raise), `period > n`
+/// returns NaN, and NaNs in the source propagate through the recurrence
+/// exactly as in `ema`.
 #[pyfunction]
 pub fn ema_last(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<f64> {
     let source_array = source.as_array();
@@ -411,8 +419,15 @@ pub fn ema_last(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<f64> {
     Ok(prev)
 }
 
-/// Last value of SMA — identical rolling-sum recurrence to `sma`, but skips
-/// allocating the full output series. Bit-for-bit equal to `sma(...)[-1]`.
+/// Last value of SMA — identical rolling-sum recurrence to `sma` (NaN-aware
+/// windowed mean: sum/count over the window's non-NaN values), but skips
+/// allocating the full output series. Bit-for-bit equal to `sma(...)[-1]`
+/// (verified across a 400-case randomized sweep incl. NaN prefixes, random
+/// NaNs and strided column views; `==` comparison, no tolerance).
+///
+/// Accepts strided (non-contiguous) views, e.g. candle column slices.
+/// Edge cases mirror `sma(...)[-1]`: empty input raises IndexError,
+/// `n < period` returns NaN, an all-NaN final window returns NaN.
 #[pyfunction]
 pub fn sma_last(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<f64> {
     let source_array = source.as_array();
