@@ -26,6 +26,7 @@ fn jesse_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(moving_averages::cwma, m)?)?;
     m.add_function(wrap_pyfunction!(moving_averages::dema, m)?)?;
     m.add_function(wrap_pyfunction!(moving_averages::ema, m)?)?;
+    m.add_function(wrap_pyfunction!(moving_averages::ema_last, m)?)?;
     m.add_function(wrap_pyfunction!(moving_averages::epma, m)?)?;
     m.add_function(wrap_pyfunction!(moving_averages::frama, m)?)?;
     m.add_function(wrap_pyfunction!(moving_averages::hma, m)?)?;
@@ -38,6 +39,7 @@ fn jesse_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(moving_averages::nma, m)?)?;
     m.add_function(wrap_pyfunction!(moving_averages::rma, m)?)?;
     m.add_function(wrap_pyfunction!(moving_averages::sma, m)?)?;
+    m.add_function(wrap_pyfunction!(moving_averages::sma_last, m)?)?;
     m.add_function(wrap_pyfunction!(moving_averages::smma, m)?)?;
     m.add_function(wrap_pyfunction!(moving_averages::sqwma, m)?)?;
     m.add_function(wrap_pyfunction!(moving_averages::srwma, m)?)?;
@@ -68,6 +70,7 @@ fn jesse_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(oscillators::mass, m)?)?;
     m.add_function(wrap_pyfunction!(oscillators::pfe, m)?)?;
     m.add_function(wrap_pyfunction!(oscillators::rsi, m)?)?;
+    m.add_function(wrap_pyfunction!(oscillators::rsi_last, m)?)?;
     m.add_function(wrap_pyfunction!(oscillators::rsx, m)?)?;
     m.add_function(wrap_pyfunction!(oscillators::srsi, m)?)?;
     m.add_function(wrap_pyfunction!(oscillators::stoch, m)?)?;
@@ -99,7 +102,9 @@ fn jesse_rust(_py: Python, m: &PyModule) -> PyResult<()> {
 
     // ---- bands / channels / volatility --------------------------------------
     m.add_function(wrap_pyfunction!(bands::atr, m)?)?;
+    m.add_function(wrap_pyfunction!(bands::atr_last, m)?)?;
     m.add_function(wrap_pyfunction!(bands::bollinger_bands, m)?)?;
+    m.add_function(wrap_pyfunction!(bands::bollinger_bands_last, m)?)?;
     m.add_function(wrap_pyfunction!(bands::bollinger_bands_width, m)?)?;
     m.add_function(wrap_pyfunction!(bands::chande, m)?)?;
     m.add_function(wrap_pyfunction!(bands::chop, m)?)?;
@@ -123,6 +128,8 @@ fn jesse_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ehlers::voss, m)?)?;
 
     // ---- candle transforms --------------------------------------------------
+    m.add_function(wrap_pyfunction!(candle::candle_from_one_minutes, m)?)?;
+    m.add_function(wrap_pyfunction!(candle::fix_jumped_candles, m)?)?;
     m.add_function(wrap_pyfunction!(candle::emd, m)?)?;
     m.add_function(wrap_pyfunction!(candle::heikin_ashi_candles, m)?)?;
     m.add_function(wrap_pyfunction!(candle::qstick, m)?)?;

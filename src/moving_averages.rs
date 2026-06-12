@@ -2,6 +2,7 @@
 
 use ndarray::{s, Array1};
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2};
+use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 
 use crate::helpers::{get_period_from_timestamp, ih_ema, ih_wma};
@@ -380,6 +381,113 @@ pub fn ema(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1
         
         Ok(PyArray1::from_array(py, &result).to_owned())
     })
+}
+
+/// Last value of EMA — runs the exact same `prev = alpha*x + (1-alpha)*prev`
+/// recurrence as `ema` (same float ops, same order), but skips allocating and
+/// filling the full output series. Bit-for-bit equal to `ema(...)[-1]`
+/// (verified by randomized bitwise sweeps, `==` comparison, no tolerance).
+///
+/// Accepts strided (non-contiguous) views, e.g. candle column slices.
+/// Edge cases mirror `ema(...)[-1]`: empty input raises IndexError (the same
+/// error indexing `[-1]` on an empty numpy result would raise), `period > n`
+/// returns NaN, and NaNs in the source propagate through the recurrence
+/// exactly as in `ema`.
+#[pyfunction]
+pub fn ema_last(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<f64> {
+    let source_array = source.as_array();
+    let n = source_array.len();
+
+    if n == 0 {
+        return Err(PyIndexError::new_err(
+            "index -1 is out of bounds for axis 0 with size 0",
+        ));
+    }
+
+    if period > n {
+        return Ok(f64::NAN);
+    }
+
+    let alpha = 2.0 / (period as f64 + 1.0);
+    let one_minus_alpha = 1.0 - alpha;
+
+    let mut prev = source_array[0];
+    for i in 1..n {
+        prev = alpha * source_array[i] + one_minus_alpha * prev;
+    }
+
+    Ok(prev)
+}
+
+/// Last value of SMA — identical rolling-sum recurrence to `sma` (NaN-aware
+/// windowed mean: sum/count over the window's non-NaN values), but skips
+/// allocating the full output series. Bit-for-bit equal to `sma(...)[-1]`
+/// (verified across a 400-case randomized sweep incl. NaN prefixes, random
+/// NaNs and strided column views; `==` comparison, no tolerance).
+///
+/// Accepts strided (non-contiguous) views, e.g. candle column slices.
+/// Edge cases mirror `sma(...)[-1]`: empty input raises IndexError,
+/// `n < period` returns NaN, an all-NaN final window returns NaN.
+#[pyfunction]
+pub fn sma_last(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<f64> {
+    let source_array = source.as_array();
+    let n = source_array.len();
+
+    if n == 0 {
+        return Err(PyIndexError::new_err(
+            "index -1 is out of bounds for axis 0 with size 0",
+        ));
+    }
+
+    if n < period {
+        return Ok(f64::NAN);
+    }
+
+    // Fast path: when the source has no NaNs (the overwhelmingly common
+    // case — raw candle columns never contain NaN), the NaN branches below
+    // never fire and `count` stays equal to `period` for every window, so a
+    // branch-free loop performs the exact same float operations in the exact
+    // same order — bit-for-bit identical result. Sources with NaNs (e.g.
+    // indicator-on-indicator series) fall through to the original loop.
+    // (works on strided views too — candle columns arrive as non-contiguous
+    // column views, so this must not require as_slice())
+    if !source_array.iter().any(|v| v.is_nan()) {
+        let mut sum = 0.0;
+        for i in 0..period {
+            sum += source_array[i];
+        }
+        for i in period..n {
+            sum -= source_array[i - period];
+            sum += source_array[i];
+        }
+        return Ok(sum / period as f64);
+    }
+
+    let mut sum = 0.0;
+    let mut count: i64 = 0;
+    for i in 0..period {
+        if !source_array[i].is_nan() {
+            sum += source_array[i];
+            count += 1;
+        }
+    }
+
+    for i in period..n {
+        if !source_array[i - period].is_nan() {
+            sum -= source_array[i - period];
+            count -= 1;
+        }
+        if !source_array[i].is_nan() {
+            sum += source_array[i];
+            count += 1;
+        }
+    }
+
+    if count > 0 {
+        Ok(sum / count as f64)
+    } else {
+        Ok(f64::NAN)
+    }
 }
 
 /// Calculate ZLEMA (Zero-Lag Exponential Moving Average)

@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "jesse-rust"
-version = "1.1.0"
+version = "1.2.0"
 description = "High-performance Rust-based technical indicators for Jesse trading framework"
 readme = "README.md"
 requires-python = ">=3.10"

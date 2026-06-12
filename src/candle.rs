@@ -1,10 +1,155 @@
 //! Candle transforms / decompositions (Heikin Ashi, EMD, QStick).
 
-use numpy::{PyArray1, PyReadonlyArray2};
+use ndarray::ArrayView1;
+use numpy::{PyArray1, PyReadonlyArray2, PyReadwriteArray2};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use crate::types::{PyArrTuple3, PyArrTuple4};
 
 use crate::helpers::{ih_sma};
+
+/// numpy `maximum.reduce` fold: keeps the accumulator on ties (and once NaN,
+/// stays NaN) — `(m >= v || m.is_nan()) ? m : v`.
+#[inline(always)]
+fn np_maximum(m: f64, v: f64) -> f64 {
+    if m >= v || m.is_nan() {
+        m
+    } else {
+        v
+    }
+}
+
+/// numpy `minimum.reduce` fold, mirroring `np_maximum`.
+#[inline(always)]
+fn np_minimum(m: f64, v: f64) -> f64 {
+    if m <= v || m.is_nan() {
+        m
+    } else {
+        v
+    }
+}
+
+/// Bit-exact replica of numpy's scalar pairwise summation (`pairwise_sum_DOUBLE`)
+/// as used by `arr.sum()`: blocks of < 8 are summed naively, blocks up to 128
+/// use the unrolled 8-accumulator loop with numpy's exact final combination
+/// tree, larger blocks split recursively in halves rounded down to a multiple
+/// of 8 — float addition is not associative, so this exact order is what makes
+/// the result bit-identical. Verified bitwise-identical to numpy **1.26.4**
+/// for every length up to 4320; beyond that numpy switches to a buffered
+/// reduce with a different accumulation order, so every caller gates on
+/// `n <= 4320` and falls back to numpy above it. If a future numpy changes
+/// its pairwise blocking, the equivalence sweep must be re-run.
+fn np_pairwise_sum(a: &ArrayView1<f64>, start: usize, n: usize) -> f64 {
+    if n < 8 {
+        let mut res = 0.0;
+        for i in 0..n {
+            res += a[start + i];
+        }
+        res
+    } else if n <= 128 {
+        let mut r = [
+            a[start],
+            a[start + 1],
+            a[start + 2],
+            a[start + 3],
+            a[start + 4],
+            a[start + 5],
+            a[start + 6],
+            a[start + 7],
+        ];
+        let mut i = 8;
+        while i < n - (n % 8) {
+            for j in 0..8 {
+                r[j] += a[start + i + j];
+            }
+            i += 8;
+        }
+        let mut res = ((r[0] + r[1]) + (r[2] + r[3])) + ((r[4] + r[5]) + (r[6] + r[7]));
+        while i < n {
+            res += a[start + i];
+            i += 1;
+        }
+        res
+    } else {
+        let mut n2 = n / 2;
+        n2 -= n2 % 8;
+        np_pairwise_sum(a, start, n2) + np_pairwise_sum(a, start + n2, n - n2)
+    }
+}
+
+/// Build one bigger-timeframe candle from a block of 1m candles —
+/// bit-exact equivalent of jesse's Python:
+///   np.array([c[0,0], c[0,1], c[-1,2], c[:,3].max(), c[:,4].min(), c[:,5].sum()])
+/// i.e. timestamp/open of the first row, close of the last row, the
+/// `maximum.reduce`/`minimum.reduce` folds of high/low (NaN and tie semantics
+/// replicated by `np_maximum`/`np_minimum`) and numpy's pairwise sum of the
+/// volume column (`np_pairwise_sum`).
+///
+/// Input is an (n, 6) f64 candle matrix; strided row views are accepted.
+/// Empty input raises ValueError. Only call for blocks of <= 4320 rows —
+/// jesse's callers gate on that and fall back to the numpy expression above
+/// it (see `np_pairwise_sum` for the numpy-1.26.4-verified reasoning).
+/// Verified bitwise-identical to the numpy expression for every block length
+/// 1..=4320, plus NaN, -0.0 and strided-row cases.
+#[pyfunction]
+pub fn candle_from_one_minutes(candles: PyReadonlyArray2<f64>) -> PyResult<Py<PyArray1<f64>>> {
+    Python::with_gil(|py| {
+        let c = candles.as_array();
+        let n = c.nrows();
+        if n == 0 {
+            return Err(PyValueError::new_err("No candles were passed"));
+        }
+
+        let high_col = c.column(3);
+        let low_col = c.column(4);
+        let vol_col = c.column(5);
+
+        let mut high = high_col[0];
+        let mut low = low_col[0];
+        for i in 1..n {
+            high = np_maximum(high, high_col[i]);
+            low = np_minimum(low, low_col[i]);
+        }
+
+        let volume = np_pairwise_sum(&vol_col, 0, n);
+
+        let out = vec![c[[0, 0]], c[[0, 1]], c[[n - 1, 2]], high, low, volume];
+        Ok(PyArray1::from_vec(py, out).to_owned())
+    })
+}
+
+/// In-place forward pass of jesse's `_get_fixed_jumped_candle` over a whole
+/// 1m series: when the open of candle i differs from the close of candle i-1,
+/// the open (and high/low when needed) is snapped to the previous close.
+/// The fix only ever reads column 2 (close), which it never writes, so one
+/// forward pass is bit-exact equivalent to applying it candle-by-candle as
+/// the simulators previously did (verified bitwise against the Python loop
+/// over randomized series).
+///
+/// Input is an (n, 6) f64 candle matrix (columns 1/3/4 = open/high/low get
+/// written); it must be writeable — jesse's prefill paths guard on that.
+/// Candle 0 is never touched (no previous close); n <= 1 is a no-op.
+#[pyfunction]
+pub fn fix_jumped_candles(mut candles: PyReadwriteArray2<f64>) -> PyResult<()> {
+    let mut c = candles.as_array_mut();
+    let n = c.nrows();
+    for i in 1..n {
+        let prev_close = c[[i - 1, 2]];
+        let open = c[[i, 1]];
+        if prev_close < open {
+            c[[i, 1]] = prev_close;
+            if prev_close < c[[i, 4]] {
+                c[[i, 4]] = prev_close;
+            }
+        } else if prev_close > open {
+            c[[i, 1]] = prev_close;
+            if prev_close > c[[i, 3]] {
+                c[[i, 3]] = prev_close;
+            }
+        }
+    }
+    Ok(())
+}
 
 /// QStick — SMA of (close - open)
 #[pyfunction]

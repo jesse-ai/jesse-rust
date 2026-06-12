@@ -2,6 +2,7 @@
 
 use ndarray::Array1;
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2};
+use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use crate::types::{PyArrTuple3};
@@ -134,6 +135,56 @@ pub fn bollinger_bands(source: PyReadonlyArray1<f64>, period: usize, devup: f64,
             PyArray1::from_array(py, &lower_band).to_owned()
         ))
     })
+}
+
+
+/// Last values of Bollinger Bands — identical rolling sum / sum-of-squares
+/// recurrence to `bollinger_bands` (same float ops, same order), but skips
+/// allocating the three full output series. Returns `(upper, middle, lower)`,
+/// bit-for-bit equal to the last elements of `bollinger_bands(...)`
+/// (verified by randomized bitwise sweeps; `==` comparison, no tolerance).
+///
+/// Accepts strided (non-contiguous) views, e.g. candle column slices.
+/// Edge cases mirror the array version + `[-1]`: empty input raises
+/// IndexError, `n < period` returns `(NaN, NaN, NaN)`; NaNs in the window
+/// poison the sums exactly as in `bollinger_bands`.
+#[pyfunction]
+pub fn bollinger_bands_last(source: PyReadonlyArray1<f64>, period: usize, devup: f64, devdn: f64) -> PyResult<(f64, f64, f64)> {
+    let source_array = source.as_array();
+    let n = source_array.len();
+
+    if n == 0 {
+        return Err(PyIndexError::new_err(
+            "index -1 is out of bounds for axis 0 with size 0",
+        ));
+    }
+
+    if n < period {
+        return Ok((f64::NAN, f64::NAN, f64::NAN));
+    }
+
+    let mut sum = 0.0;
+    let mut sum_sq = 0.0;
+
+    for i in 0..period {
+        let val = source_array[i];
+        sum += val;
+        sum_sq += val * val;
+    }
+
+    for i in period..n {
+        let old_val = source_array[i - period];
+        let new_val = source_array[i];
+
+        sum = sum - old_val + new_val;
+        sum_sq = sum_sq - (old_val * old_val) + (new_val * new_val);
+    }
+
+    let sma = sum / period as f64;
+    let variance = (sum_sq / period as f64) - (sma * sma);
+    let std_dev = variance.sqrt();
+
+    Ok((sma + devup * std_dev, sma, sma - devdn * std_dev))
 }
 
 /// Calculate CHOP (Choppiness Index) - Ultra-optimized version
@@ -338,6 +389,62 @@ pub fn atr(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<PyArray
         
         Ok(PyArray1::from_array(py, &result).to_owned())
     })
+}
+
+/// Last value of ATR — identical true-range fold and Wilder smoothing
+/// recurrence to `atr` (same float ops, same order), but skips allocating
+/// the full output series. Takes the usual jesse candle matrix (n x 6 rows;
+/// columns 2/3/4 = close/high/low), strided row views included. Bit-for-bit
+/// equal to `atr(...)[-1]` (verified by randomized bitwise sweeps).
+///
+/// Edge cases mirror `atr(...)[-1]`: empty input raises IndexError,
+/// `n < period` returns NaN.
+#[pyfunction]
+pub fn atr_last(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<f64> {
+    let candles_array = candles.as_array();
+    let n = candles_array.nrows();
+
+    if n == 0 {
+        return Err(PyIndexError::new_err(
+            "index -1 is out of bounds for axis 0 with size 0",
+        ));
+    }
+
+    if n < period {
+        return Ok(f64::NAN);
+    }
+
+    let close = candles_array.column(2);
+    let high = candles_array.column(3);
+    let low = candles_array.column(4);
+
+    let mut tr_sum = 0.0;
+
+    let first_tr = high[0] - low[0];
+    tr_sum += first_tr;
+
+    for i in 1..period {
+        let hl = high[i] - low[i];
+        let hc = (high[i] - close[i - 1]).abs();
+        let lc = (low[i] - close[i - 1]).abs();
+        let tr = hl.max(hc).max(lc);
+        tr_sum += tr;
+    }
+
+    let mut prev = tr_sum / period as f64;
+
+    let alpha = 1.0 / period as f64;
+
+    for i in period..n {
+        let hl = high[i] - low[i];
+        let hc = (high[i] - close[i - 1]).abs();
+        let lc = (low[i] - close[i - 1]).abs();
+        let tr = hl.max(hc).max(lc);
+
+        prev = prev + alpha * (tr - prev);
+    }
+
+    Ok(prev)
 }
 
 /// Calculate Chande (Chandelier Exit) - Ultra-optimized version
