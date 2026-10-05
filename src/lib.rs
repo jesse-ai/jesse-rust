@@ -5,7 +5,15 @@
 //! for what lives where. Private numerical helpers live in `helpers.rs`; the
 //! shared PyO3 return-type aliases live in `types.rs`.
 
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
+
+/// Run shared state in a dedicated child; never block the dashboard process.
+#[pyfunction]
+fn run_coordinator(py: Python<'_>) -> PyResult<()> {
+    py.allow_threads(|| jesse_coordinator::run().map_err(|error| error.to_string()))
+        .map_err(PyRuntimeError::new_err)
+}
 
 mod helpers;
 mod types;
@@ -23,6 +31,7 @@ mod volume;
 
 #[pymodule]
 fn jesse_rust(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(run_coordinator, m)?)?;
     // ---- moving averages ----------------------------------------------------
     m.add_function(wrap_pyfunction!(moving_averages::cwma, m)?)?;
     m.add_function(wrap_pyfunction!(moving_averages::dema, m)?)?;

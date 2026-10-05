@@ -1,7 +1,8 @@
 # Jesse Rust
 
 The native technical-indicator engine that powers the [Jesse](https://jesse.trade)
-trading framework — written in Rust, exposed to Python via PyO3.
+trading framework, plus its local shared-state coordinator — written in Rust,
+exposed to Python via PyO3.
 
 ## Why
 
@@ -54,6 +55,20 @@ import jesse_rust as jr
 source = np.asarray(prices, dtype=np.float64)
 ema_50 = jr.ema(np.ascontiguousarray(source), 50)
 ```
+
+## Shared-state coordinator
+
+Starting with version 1.3.1, the same extension includes Jesse's local coordinator.
+`jesse run` starts a dedicated Python child that calls `jesse_rust.run_coordinator()`;
+it chooses a private loopback port, authenticates workers, and manages shutdown.
+Normal users need no separate service, connection settings, or Rust compiler.
+Importing this package or Jesse does not start the service.
+
+The coordinator keeps temporary shared values, locks and dashboard events in
+memory; PostgreSQL continues to hold persistent application data. See
+[coordination/README.md](coordination/README.md) for the protocol, resource limits,
+external deployment options and failure boundaries. Dependency notices ship in
+`THIRD_PARTY_LICENSES.txt` with every wheel and source archive.
 
 ## Supported indicators
 

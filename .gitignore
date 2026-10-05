@@ -93,3 +93,7 @@ ipython_config.py
 *.tmp
 *.temp
 .temp/
+
+# Both published crates keep their resolved dependencies reproducible.
+!/Cargo.lock
+!/coordination/Cargo.lock
