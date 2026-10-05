@@ -17,7 +17,7 @@ def main() -> None:
         [sys.executable, '-u', '-c', 'import jesse_rust; jesse_rust.run_coordinator()'],
         env={**os.environ, 'JESSE_COORDINATION_TOKEN': token,
              'JESSE_COORDINATION_BIND': '127.0.0.1:0', 'JESSE_COORDINATION_PARENT_PIPE': '1'},
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace',
     )
     assert process.stdout is not None and process.stdin is not None
     lines: queue.Queue[str] = queue.Queue(maxsize=1)
@@ -40,10 +40,19 @@ def main() -> None:
         process.stdin.close()
         assert process.wait(timeout=5) == 0, 'Coordinator did not exit after its owner closed'
         print('Packaged coordinator: authenticated readiness and parent-pipe cleanup passed')
+    except BaseException:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        if process.stderr is not None:
+            # After exit the pipe reaches EOF; cap diagnostics to one small log frame.
+            sys.stderr.write(process.stderr.read(65536))
+        raise
     finally:
         if process.poll() is None:
             process.kill()
             process.wait(timeout=5)
+        process.stdin.close()
         process.stdout.close()
         if process.stderr is not None:
             process.stderr.close()
