@@ -1066,25 +1066,31 @@ pub fn cg(source: PyReadonlyArray1<f64>, period: usize) -> PyResult<Py<PyArray1<
     })
 }
 
+/// Aroon Oscillator over a candle matrix (high at column 3, low at column 4).
+/// Pure core so unit tests can exercise the window logic without Python.
+fn aroonosc_core(c: &ndarray::ArrayView2<f64>, period: usize) -> Vec<f64> {
+    let n = c.shape()[0];
+    let mut r = vec![f64::NAN; n];
+    for i in period..n {
+        let start = i - period;
+        let mut best_val = c[[start,3]];
+        let mut best_idx = 0usize;
+        let mut worst_val = c[[start,4]];
+        let mut worst_idx = 0usize;
+        for j in 0..=period {
+            if c[[start+j,3]] > best_val { best_val = c[[start+j,3]]; best_idx = j; }
+            if c[[start+j,4]] < worst_val { worst_val = c[[start+j,4]]; worst_idx = j; }
+        }
+        r[i] = 100.0 * (best_idx as f64 - worst_idx as f64) / period as f64;
+    }
+    r
+}
+
 /// Aroon Oscillator
 #[pyfunction]
 pub fn aroonosc(candles: PyReadonlyArray2<f64>, period: usize) -> PyResult<Py<PyArray1<f64>>> {
     Python::with_gil(|py| {
-        let c = candles.as_array();
-        let n = c.shape()[0];
-        let mut r = vec![f64::NAN; n];
-        for i in (period-1)..n {
-            let start = i + 1 - period;
-            let mut best_val = c[[start,3]];
-            let mut best_idx = 0usize;
-            let mut worst_val = c[[start,4]];
-            let mut worst_idx = 0usize;
-            for j in 0..period {
-                if c[[start+j,3]] > best_val { best_val = c[[start+j,3]]; best_idx = j; }
-                if c[[start+j,4]] < worst_val { worst_val = c[[start+j,4]]; worst_idx = j; }
-            }
-            r[i] = 100.0 * (best_idx as f64 - worst_idx as f64) / period as f64;
-        }
+        let r = aroonosc_core(&candles.as_array(), period);
         Ok(PyArray1::from_vec(py, r).to_owned())
     })
 }
@@ -1283,4 +1289,83 @@ pub fn fisher(candles: PyReadonlyArray2<f64>, period: usize) -> PyArrTuple2 {
             PyArray1::from_vec(py, fisher_sig).to_owned(),
         ))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::aroonosc_core;
+    use ndarray::arr2;
+
+    /// Naive, definition-first reference: over each `period + 1`-bar window
+    /// ending at bar i, Aroon Up = 100 * (0-based offset of the window's
+    /// highest high, counted from the window's oldest bar) / period, Aroon
+    /// Down likewise for the lowest low, and the oscillator is Up - Down.
+    fn reference_aroonosc(c: &ndarray::ArrayView2<f64>, period: usize) -> Vec<f64> {
+        let n = c.shape()[0];
+        let mut out = vec![f64::NAN; n];
+        for i in period..n {
+            let window = i - period;
+            // First extreme wins on ties, matching jesse's numpy argmax/argmin.
+            let mut high_pos = 0usize;
+            let mut low_pos = 0usize;
+            for j in 1..=period {
+                if c[[window + j, 3]] > c[[window + high_pos, 3]] { high_pos = j; }
+                if c[[window + j, 4]] < c[[window + low_pos, 4]] { low_pos = j; }
+            }
+            let up = 100.0 * high_pos as f64 / period as f64;
+            let down = 100.0 * low_pos as f64 / period as f64;
+            out[i] = up - down;
+        }
+        out
+    }
+
+    /// 6-column candle fixture (columns 3 and 4 are high and low, as the
+    /// provider contract requires; other columns unused).
+    fn candles() -> ndarray::Array2<f64> {
+        arr2(&[
+            [0.0, 0.0, 0.0, 10.0, 8.0, 0.0],
+            [0.0, 0.0, 0.0, 12.0, 9.0, 0.0],
+            [0.0, 0.0, 0.0, 15.0, 11.0, 0.0],
+            [0.0, 0.0, 0.0, 13.0, 10.0, 0.0],
+            [0.0, 0.0, 0.0, 18.0, 12.0, 0.0],
+            [0.0, 0.0, 0.0, 25.0, 14.0, 0.0],
+            [0.0, 0.0, 0.0, 20.0, 13.0, 0.0],
+            [0.0, 0.0, 0.0, 17.0, 15.0, 0.0],
+            [0.0, 0.0, 0.0, 22.0, 16.0, 0.0],
+            [0.0, 0.0, 0.0, 19.0, 17.0, 0.0],
+        ])
+    }
+
+    #[test]
+    fn aroonosc_matches_definition_first_reference() {
+        let c = candles();
+        let got = aroonosc_core(&c.view(), 4);
+        let want = reference_aroonosc(&c.view(), 4);
+        for i in 0..got.len() {
+            if want[i].is_nan() {
+                assert!(got[i].is_nan(), "bar {i}: expected NaN, got {}", got[i]);
+            } else {
+                assert!((got[i] - want[i]).abs() < 1e-9, "bar {i}: {} != {}", got[i], want[i]);
+            }
+        }
+    }
+
+    #[test]
+    fn aroonosc_warmup_bars_are_nan() {
+        let c = candles();
+        let got = aroonosc_core(&c.view(), 4);
+        assert!(got[..4].iter().all(|v| v.is_nan()), "first `period` bars must be NaN");
+        assert!(!got[4].is_nan());
+    }
+
+    /// Hand-computed last bar: window bars 5..=9, highs 25,20,17,22,19 (highest
+    /// at offset 0), lows 14,13,15,16,17 (lowest at offset 1).
+    /// up = 0, down = 100*1/4 = 25, osc = -25. Bar 5 (only in the new window)
+    /// holds the highest high, so the old `period`-bar loop would compute 50.
+    #[test]
+    fn aroonosc_last_bar_hand_computed() {
+        let c = candles();
+        let got = aroonosc_core(&c.view(), 4);
+        assert!((got[9] - (-25.0)).abs() < 1e-9, "last bar: {} != -25", got[9]);
+    }
 }
