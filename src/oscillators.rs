@@ -270,60 +270,31 @@ pub fn srsi(source: PyReadonlyArray1<f64>, period: usize, period_stoch: usize, k
 }
 
 /// Calculate MACD (Moving Average Convergence/Divergence)
+///
+/// SMA-seeded EMAs as in TA-Lib and TradingView; warm-up values are NaN.
 #[pyfunction]
 pub fn macd(source: PyReadonlyArray1<f64>, fast_period: usize, slow_period: usize, signal_period: usize) -> PyArrTuple3 {
     Python::with_gil(|py| {
         let source_array = source.as_array();
-        let n = source_array.len();
-        
-        let mut macd_line_result = Array1::<f64>::zeros(n);
-        let mut signal_line_result = Array1::<f64>::zeros(n);
-        let mut hist_result = Array1::<f64>::zeros(n);
-
-        if n == 0 {
-            return Ok((
-                PyArray1::from_array(py, &macd_line_result).to_owned(),
-                PyArray1::from_array(py, &signal_line_result).to_owned(),
-                PyArray1::from_array(py, &hist_result).to_owned(),
-            ));
-        }
-
-        let alpha_fast = 2.0 / (fast_period as f64 + 1.0);
-        let alpha_slow = 2.0 / (slow_period as f64 + 1.0);
-        let alpha_signal = 2.0 / (signal_period as f64 + 1.0);
-
-        let mut ema_fast = source_array[0];
-        let mut ema_slow = source_array[0];
-        
-        let macd_val = ema_fast - ema_slow;
-        let macd_val_cleaned = if macd_val.is_nan() { 0.0 } else { macd_val };
-        
-        let mut signal_ema = macd_val_cleaned;
-
-        macd_line_result[0] = macd_val_cleaned;
-        signal_line_result[0] = signal_ema;
-        hist_result[0] = macd_val - signal_ema;
-
-        for i in 1..n {
-            ema_fast = alpha_fast * source_array[i] + (1.0 - alpha_fast) * ema_fast;
-            ema_slow = alpha_slow * source_array[i] + (1.0 - alpha_slow) * ema_slow;
-
-            let macd_val = ema_fast - ema_slow;
-            let macd_val_cleaned = if macd_val.is_nan() { 0.0 } else { macd_val };
-            
-            signal_ema = alpha_signal * macd_val_cleaned + (1.0 - alpha_signal) * signal_ema;
-            
-            let hist_val = macd_val - signal_ema;
-
-            macd_line_result[i] = macd_val_cleaned;
-            signal_line_result[i] = signal_ema;
-            hist_result[i] = hist_val;
-        }
+        let owned;
+        let close = match source_array.as_slice() {
+            Some(s) => s,
+            None => {
+                owned = source_array.to_vec();
+                &owned
+            }
+        };
+        let (line, signal, hist) = fin_primitives::signals::batch_f64::macd(
+            close,
+            fast_period,
+            slow_period,
+            signal_period,
+        );
 
         Ok((
-            PyArray1::from_array(py, &macd_line_result).to_owned(),
-            PyArray1::from_array(py, &signal_line_result).to_owned(),
-            PyArray1::from_array(py, &hist_result).to_owned(),
+            PyArray1::from_vec(py, line).to_owned(),
+            PyArray1::from_vec(py, signal).to_owned(),
+            PyArray1::from_vec(py, hist).to_owned(),
         ))
     })
 }
@@ -1283,4 +1254,29 @@ pub fn fisher(candles: PyReadonlyArray2<f64>, period: usize) -> PyArrTuple2 {
             PyArray1::from_vec(py, fisher_sig).to_owned(),
         ))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn macd_is_sma_seeded() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            // On a linear ramp an SMA-seeded EMA(p) lags by exactly (p - 1) / 2,
+            // so MACD(3, 6, 4) is 2.5 - 1 = 1.5 from its first bar and the signal matches it.
+            let ramp: Vec<f64> = (0..40).map(f64::from).collect();
+            let src = PyArray1::from_vec(py, ramp);
+            let (line, signal, hist) = macd(src.readonly(), 3, 6, 4).unwrap();
+            let line = line.as_ref(py).to_vec().unwrap();
+            let signal = signal.as_ref(py).to_vec().unwrap();
+            let hist = hist.as_ref(py).to_vec().unwrap();
+            assert!(line[..5].iter().all(|v| v.is_nan()));
+            assert!(signal[..8].iter().all(|v| v.is_nan()));
+            assert!(line[5..].iter().all(|v| (v - 1.5).abs() < 1e-9));
+            assert!(signal[8..].iter().all(|v| (v - 1.5).abs() < 1e-9));
+            assert!(hist[8..].iter().all(|v| v.abs() < 1e-9));
+        });
+    }
 }

@@ -15,6 +15,7 @@ pyo3 = { version = "0.20.3", features = ["extension-module"] }
 numpy = "0.20.0"
 ndarray = "0.15.6"
 rust_decimal = "1.35.0"
+fin-primitives = { version = "4.0.1", default-features = false, features = ["indicators"] }
 
 # Optimize for size and performance in release builds
 [profile.release]
